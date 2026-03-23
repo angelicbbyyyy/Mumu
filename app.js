@@ -502,7 +502,7 @@ async function sendLineMessage() {
     renderLINEMessages();
   } catch (err) {
     removeTypingIndicator();
-    showApiError(err);
+    await showApiError(err);
   }
 
   isSending = false;
@@ -526,12 +526,12 @@ function updateLineSendBtn() {
 // Multi-Provider API Call
 // ============================================================
 
-function showApiError(err) {
+async function showApiError(err) {
   console.error('API error:', err);
   const msg = err?.message || '';
   let friendly;
   if (err instanceof TypeError || msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
-    friendly = 'Network error — API calls are blocked when opening the file directly.\n\nThis app needs to be hosted on a web server (GitHub Pages, Netlify, Vercel, etc.).\n\nDeploy instructions are in the repo.';
+    friendly = await diagnoseNetworkError();
   } else if (msg.includes('401') || msg.toLowerCase().includes('authentication') || msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('invalid x-api-key')) {
     friendly = 'Invalid API key. Double-check your key in Settings.';
   } else if (msg.includes('403')) {
@@ -542,6 +542,40 @@ function showApiError(err) {
     friendly = msg || 'Something went wrong. Check the browser console for details.';
   }
   alert(friendly);
+}
+
+async function diagnoseNetworkError() {
+  if (location.protocol === 'file:') {
+    return 'Network error — API calls are blocked when opening the file directly.\n\nThis app needs to be hosted on a web server like GitHub Pages, Netlify, or Vercel.';
+  }
+
+  if (navigator.onLine === false) {
+    return 'You appear to be offline right now. Check your internet connection and try again.';
+  }
+
+  const { provider } = state.settings;
+  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
+  const baseUrl = provider === 'custom'
+    ? (state.settings.baseUrl || '').replace(/\/$/, '')
+    : provDef.baseUrl;
+  const testUrl = baseUrl + (provDef.chatPath || '');
+
+  try {
+    const resp = await fetch(testUrl, {
+      method: 'OPTIONS',
+      headers: {
+        'Access-Control-Request-Method': 'POST',
+      },
+    });
+
+    if (resp.ok) {
+      return `Connection reached ${provDef.label}, so hosting is not the issue.\n\nThis page is already running from ${location.origin}. The remaining causes are usually:\n- a browser extension/privacy blocker\n- a bad custom base URL\n- provider/browser rejection before the real response is returned\n\nTry a hard refresh, disable blockers for this site, and use the official provider URL in Studio.`;
+    }
+  } catch (diagnosticErr) {
+    console.warn('diagnoseNetworkError failed', diagnosticErr);
+  }
+
+  return `The request failed before ${provDef.label} returned a readable response.\n\nThis page is hosted at ${location.origin}, so it is not a GitHub Pages hosting problem. Check your browser privacy blockers, custom base URL, or provider-specific browser access limits.`;
 }
 
 async function callAPI(charId) {
@@ -684,7 +718,7 @@ async function fetchModels() {
     showToast(`Loaded ${models.length} models`);
   } catch (err) {
     if (statusEl) statusEl.textContent = 'Failed';
-    showApiError(err);
+    await showApiError(err);
   }
 }
 
