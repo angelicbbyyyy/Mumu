@@ -492,10 +492,20 @@
         <div class="wallpaper-swatches" id="wallpaperSwatches"></div>
 
         <div style="padding:0 16px 8px;">
+          <div class="settings-section-label" style="padding:0 0 8px;">Custom Upload</div>
+          <div class="settings-group" style="margin-bottom:12px;">
+            <div class="settings-row" style="display:block;">
+              <div class="upload-actions">
+                <button class="btn btn-secondary" type="button" onclick="document.getElementById('wallpaperImageInput').click()">Choose Image</button>
+                <button class="btn btn-secondary" type="button" onclick="clearCustomWallpaper()">Clear</button>
+              </div>
+              <div class="image-preview-card wallpaper-preview-card" id="wallpaperPreview">No custom wallpaper selected</div>
+            </div>
+          </div>
           <div class="settings-section-label" style="padding:0 0 8px;">Custom Image URL</div>
           <div class="settings-group">
             <div class="settings-row">
-              <input class="settings-input" id="wallpaperUrl" type="url" placeholder="https://example.com/image.jpg" style="text-align:left;">
+              <input class="settings-input" id="wallpaperUrl" type="url" placeholder="https://example.com/image.jpg" style="text-align:left;" oninput="previewWallpaperUrl(this.value)">
             </div>
           </div>
           <div class="modal-actions">
@@ -517,7 +527,14 @@
         <div class="form-section">
           <div class="form-row">
             <span class="form-label">Avatar</span>
-            <input class="form-input" id="charAvatar" type="text" placeholder="🌸" maxlength="2">
+            <div class="avatar-field-stack">
+              <div class="upload-actions">
+                <button class="btn btn-secondary" type="button" onclick="document.getElementById('charAvatarInput').click()">Choose Image</button>
+                <button class="btn btn-secondary" type="button" onclick="clearCharacterAvatar()">Clear</button>
+              </div>
+              <div class="image-preview-card avatar-preview-card" id="charAvatarPreview">🌸</div>
+              <input class="form-input" id="charAvatar" type="text" placeholder="Emoji, image URL, or uploaded image" oninput="updateCharacterAvatarPreview(this.value)">
+            </div>
           </div>
           <div class="form-row">
             <span class="form-label">Name</span>
@@ -570,6 +587,8 @@
 
     <input type="file" id="voomImageInput" accept="image/*" style="display:none" onchange="handleVoomImageChange(event)">
     <input type="file" id="studioImportInput" accept="application/json,.json" style="display:none" onchange="handleImportStudioData(event)">
+    <input type="file" id="charAvatarInput" accept="image/*" style="display:none" onchange="handleCharacterAvatarChange(event)">
+    <input type="file" id="wallpaperImageInput" accept="image/*" style="display:none" onchange="handleWallpaperImageChange(event)">
 
     <div class="modal-overlay" id="voomModal" onclick="closeVoomComposer(event)">
       <div class="modal-sheet">

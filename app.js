@@ -333,6 +333,44 @@ function autoResize(el) {
   el.style.height = Math.min(el.scrollHeight, 80) + 'px';
 }
 
+function isImageSource(value) {
+  const trimmed = String(value || '').trim();
+  return /^data:image\//i.test(trimmed)
+    || /^https?:\/\//i.test(trimmed)
+    || /^blob:/i.test(trimmed)
+    || /^\/[^/]/.test(trimmed)
+    || /^assets\//i.test(trimmed)
+    || /^\.?\//.test(trimmed);
+}
+
+function avatarMarkup(value, className, fallback = '🤖') {
+  const trimmed = String(value || '').trim();
+  if (isImageSource(trimmed)) {
+    return `<div class="${className} avatar-has-image"><img class="avatar-image" src="${escHtml(trimmed)}" alt="Avatar"></div>`;
+  }
+  return `<div class="${className}">${escHtml(trimmed || fallback)}</div>`;
+}
+
+function updateCharacterAvatarPreview(value) {
+  const preview = document.getElementById('charAvatarPreview');
+  if (!preview) return;
+  const trimmed = String(value || '').trim();
+  preview.innerHTML = isImageSource(trimmed)
+    ? `<img class="preview-image" src="${escHtml(trimmed)}" alt="Avatar preview">`
+    : `<span>${escHtml(trimmed || '🌸')}</span>`;
+}
+
+function updateWallpaperPreview(value) {
+  const preview = document.getElementById('wallpaperPreview');
+  if (!preview) return;
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    preview.innerHTML = 'No custom wallpaper selected';
+    return;
+  }
+  preview.innerHTML = `<img class="preview-image" src="${escHtml(trimmed)}" alt="Wallpaper preview">`;
+}
+
 // ============================================================
 // Clock
 // ============================================================
@@ -349,7 +387,7 @@ function updateClock() {
 function applyWallpaper(value) {
   state.wallpaper = value;
   const screen = document.getElementById('iphoneScreen');
-  if (value && value.startsWith('http')) {
+  if (isImageSource(value)) {
     screen.style.background = `url('${value}') center/cover no-repeat`;
   } else {
     screen.style.background = value || WALLPAPERS[0].value;
@@ -359,6 +397,8 @@ function applyWallpaper(value) {
 
 function openWallpaperPicker() {
   renderWallpaperSwatches();
+  document.getElementById('wallpaperUrl').value = /^https?:\/\//i.test(state.wallpaper || '') ? state.wallpaper : '';
+  updateWallpaperPreview(isImageSource(state.wallpaper) ? state.wallpaper : '');
   document.getElementById('wallpaperModal').classList.add('open');
 }
 
@@ -382,6 +422,8 @@ function renderWallpaperSwatches() {
 function selectWallpaper(index) {
   applyWallpaper(WALLPAPERS[index].value);
   renderWallpaperSwatches();
+  document.getElementById('wallpaperUrl').value = '';
+  updateWallpaperPreview('');
   setTimeout(() => document.getElementById('wallpaperModal').classList.remove('open'), 400);
 }
 
@@ -389,7 +431,37 @@ function applyCustomWallpaper() {
   const url = document.getElementById('wallpaperUrl').value.trim();
   if (!url) return;
   applyWallpaper(url);
+  updateWallpaperPreview(url);
   document.getElementById('wallpaperModal').classList.remove('open');
+}
+
+function previewWallpaperUrl(value) {
+  if (!/^https?:\/\//i.test(String(value || '').trim())) {
+    updateWallpaperPreview('');
+    return;
+  }
+  updateWallpaperPreview(value);
+}
+
+function handleWallpaperImageChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    document.getElementById('wallpaperUrl').value = '';
+    updateWallpaperPreview(result);
+    applyWallpaper(result);
+    renderWallpaperSwatches();
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearCustomWallpaper() {
+  document.getElementById('wallpaperUrl').value = '';
+  updateWallpaperPreview('');
+  applyWallpaper(WALLPAPERS[0].value);
+  renderWallpaperSwatches();
 }
 
 // ============================================================
@@ -517,7 +589,7 @@ function renderLINEConvList(filter = '') {
     const timeStr = last ? formatShortTime(last.ts) : '';
     return `
       <div class="line-conv-item" onclick="openLINEChat('${char.id}')">
-        <div class="line-conv-avatar">${escHtml(char.avatar || '🤖')}</div>
+        ${avatarMarkup(char.avatar, 'line-conv-avatar')}
         <div class="line-conv-info">
           <div class="line-conv-top">
             <span class="line-conv-name">${escHtml(char.name)}</span>
@@ -595,7 +667,7 @@ function renderLINEMessages() {
   if (msgs.length === 0) {
     area.innerHTML = `
       <div style="text-align:center;padding-top:40px;">
-        <div style="font-size:48px;margin-bottom:10px;">${char?.avatar || '🤖'}</div>
+        <div class="line-chat-empty-avatar">${avatarMarkup(char?.avatar, 'line-conv-avatar')}</div>
         <div style="font-size:15px;color:rgba(0,0,0,0.5);">Start a conversation with <strong>${escHtml(char?.name || 'this character')}</strong></div>
       </div>`;
     return;
@@ -632,7 +704,7 @@ function renderLINEMessages() {
       html += `
         <div class="line-msg-row received">
           ${showAvatar
-            ? `<div class="line-msg-avatar">${escHtml(char?.avatar || '🤖')}</div>`
+            ? avatarMarkup(char?.avatar, 'line-msg-avatar')
             : `<div class="line-msg-avatar-spacer"></div>`}
           <div class="line-bubble-wrap">
             <div class="line-bubble received">${escHtml(msg.content)}</div>
@@ -678,7 +750,7 @@ function showTypingIndicator() {
   el.id = 'typingRow';
   el.className = 'line-typing-row';
   el.innerHTML = `
-    <div class="line-msg-avatar">${char?.avatar || '🤖'}</div>
+    ${avatarMarkup(char?.avatar, 'line-msg-avatar')}
     <div class="line-typing-bubble">
       <div class="line-typing-dot"></div>
       <div class="line-typing-dot"></div>
@@ -1226,7 +1298,7 @@ function renderContactsList(filter = '') {
     const char = normalizeCharacter(rawChar);
     return `
     <div class="contact-item" onclick="openEditCharSheet('${char.id}')">
-      <div class="contact-avatar">${escHtml(char.avatar || '🤖')}</div>
+      ${avatarMarkup(char.avatar, 'contact-avatar')}
       <div class="contact-info">
         <div class="contact-name">${escHtml(char.name)}</div>
         <div class="contact-desc">${escHtml(char.description || 'No description')}</div>
@@ -1266,6 +1338,7 @@ function openAddCharSheet() {
   state.editingCharId = null;
   document.getElementById('charModalTitle').textContent = 'New Character';
   document.getElementById('charAvatar').value = '';
+  updateCharacterAvatarPreview('');
   document.getElementById('charName').value = '';
   document.getElementById('charDesc').value = '';
   document.getElementById('charNickname').value = '';
@@ -1286,6 +1359,7 @@ function openEditCharSheet(charId) {
   state.editingCharId = charId;
   document.getElementById('charModalTitle').textContent = 'Edit Character';
   document.getElementById('charAvatar').value = char.avatar || '';
+  updateCharacterAvatarPreview(char.avatar || '');
   document.getElementById('charName').value = char.name || '';
   document.getElementById('charDesc').value = char.description || '';
   document.getElementById('charNickname').value = char.nickname || '';
@@ -1302,6 +1376,26 @@ function openEditCharSheet(charId) {
 function closeCharModal(event) {
   if (event && event.target !== document.getElementById('charModal')) return;
   document.getElementById('charModal').classList.remove('open');
+}
+
+function handleCharacterAvatarChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    document.getElementById('charAvatar').value = result;
+    updateCharacterAvatarPreview(result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearCharacterAvatar() {
+  document.getElementById('charAvatar').value = '';
+  if (document.getElementById('charAvatarInput')) {
+    document.getElementById('charAvatarInput').value = '';
+  }
+  updateCharacterAvatarPreview('');
 }
 
 function saveCharacter() {
@@ -1382,7 +1476,7 @@ function renderLineContactsPane(filter = '') {
 
   container.innerHTML = chars.map(char => `
     <div class="line-conv-item" onclick="openLINEChat('${char.id}')">
-      <div class="line-conv-avatar">${escHtml(char.avatar || '🤖')}</div>
+      ${avatarMarkup(char.avatar, 'line-conv-avatar')}
       <div class="line-conv-info">
         <div class="line-conv-top">
           <span class="line-conv-name">${escHtml(char.name)}</span>
@@ -1398,9 +1492,9 @@ function renderLineProfilePane() {
   if (!container) return;
   const userName = state.persona.userAlias || state.settings.userName || 'You';
   container.innerHTML = `
-    <div class="line-profile-card">
+      <div class="line-profile-card">
       <div class="line-profile-hero">
-        <div class="line-profile-avatar">😊</div>
+        ${avatarMarkup('😊', 'line-profile-avatar', '😊')}
         <div>
           <div class="line-profile-name">${escHtml(userName)}</div>
           <div class="line-profile-sub">${escHtml(state.persona.coreVibe || 'Living inside a tiny green phone universe')}</div>
@@ -1443,7 +1537,7 @@ function renderVoomFeed(filter = '') {
   container.innerHTML = posts.map(post => `
     <div class="line-voom-card">
       <div class="line-voom-head">
-        <div class="line-voom-avatar">${escHtml(post.avatar || '🙂')}</div>
+        ${avatarMarkup(post.avatar || '🙂', 'line-voom-avatar', '🙂')}
         <div class="line-voom-meta">
           <div class="line-voom-name">${escHtml(post.authorName)}</div>
           <div class="line-voom-time">${escHtml(formatShortTime(post.ts))}</div>
