@@ -12,14 +12,6 @@
 <body>
 
 <svg width="0" height="0" style="position:absolute;visibility:hidden" aria-hidden="true" focusable="false">
-  <symbol id="icon-messages-svg" viewBox="0 0 64 64">
-    <path d="M32 10.5c-12.1 0-21 7.58-21 18.01 0 9.39 6.96 16.3 16.63 17.63 1.32.18 1.93.83 1.73 2.1l-.86 5.16c-.14.88.8 1.55 1.59 1.13l6.37-3.41c.86-.46 1.73-.68 2.7-.68 7.96 0 13.84-4.94 13.84-12.6 0-15.71-11.44-27.34-21-27.34z" fill="#FFFFFF"/>
-    <path d="M21.85 38.96V22.98c0-.56.46-1.02 1.02-1.02h2.78c.56 0 1.02.46 1.02 1.02v11.69h6.52c.56 0 1.02.46 1.02 1.02v3.27c0 .56-.46 1.02-1.02 1.02H22.87c-.56 0-1.02-.46-1.02-1.02z" fill="#00C300"/>
-    <path d="M36.15 38.96V22.98c0-.56.46-1.02 1.02-1.02h2.78c.56 0 1.02.46 1.02 1.02v15.98c0 .56-.46 1.02-1.02 1.02h-2.78c-.56 0-1.02-.46-1.02-1.02z" fill="#00C300"/>
-    <path d="M43.32 38.96V22.98c0-.56.46-1.02 1.02-1.02h2.71c.31 0 .6.14.79.38l6.71 8.58v-7.94c0-.56.46-1.02 1.02-1.02h2.73c.56 0 1.02.46 1.02 1.02v15.98c0 .56-.46 1.02-1.02 1.02h-2.71c-.31 0-.6-.14-.79-.38l-6.71-8.58v7.94c0 .56-.46 1.02-1.02 1.02h-2.73c-.56 0-1.02-.46-1.02-1.02z" fill="#00C300"/>
-    <path d="M62.13 24.95c0-.56-.46-1.02-1.02-1.02H50.78c-.56 0-1.02.46-1.02 1.02v14.01c0 .56.46 1.02 1.02 1.02h10.33c.56 0 1.02-.46 1.02-1.02V35.7c0-.56-.46-1.02-1.02-1.02h-6.54v-1.5h6.54c.56 0 1.02-.46 1.02-1.02v-3.23c0-.56-.46-1.02-1.02-1.02h-6.54v-1.5h6.54c.56 0 1.02-.46 1.02-1.02v-.44z" fill="#00C300" transform="translate(-2.18 0)"/>
-  </symbol>
-
   <symbol id="icon-contacts-svg" viewBox="0 0 64 64">
     <path d="M15.5 14.5c0-2.485 2.015-4.5 4.5-4.5h19c8.008 0 10 4.304 10 10v23c0 6.075-4.925 11-11 11H20c-2.485 0-4.5-2.015-4.5-4.5v-35z" fill="#F3F4F7"/>
     <path d="M40.5 10H44c2.761 0 5 2.239 5 5v28.5c0 5.799-4.701 10.5-10.5 10.5h-1V10z" fill="#E0E3E8"/>
@@ -95,8 +87,8 @@
       <div class="icon-grid">
 
         <div class="app-icon" onclick="openApp('messages')">
-          <div class="icon-wrap icon-messages">
-            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-messages-svg"></use></svg>
+          <div class="icon-wrap icon-messages icon-image-wrap">
+            <img class="icon-image" src="/Users/maria/Documents/LINE_APP_Logo.png" alt="Messages">
           </div>
           <span class="icon-label">Messages</span>
         </div>
@@ -132,8 +124,8 @@
       <!-- Dock -->
       <div class="dock">
         <div class="dock-icon" onclick="openApp('messages')">
-          <div class="icon-wrap icon-messages">
-            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-messages-svg"></use></svg>
+          <div class="icon-wrap icon-messages icon-image-wrap">
+            <img class="icon-image" src="/Users/maria/Documents/LINE_APP_Logo.png" alt="Messages">
           </div>
         </div>
         <div class="dock-icon" onclick="openApp('contacts')">
