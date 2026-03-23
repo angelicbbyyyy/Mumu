@@ -49,7 +49,9 @@ body {
 .iphone {
   width: var(--phone-width);
   height: var(--phone-height);
-  background: #1c1c1e;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,255,255,0.12), transparent 32%),
+    linear-gradient(180deg, #2a2a2d 0%, #111113 100%);
   border-radius: var(--phone-radius);
   position: relative;
   box-shadow:
@@ -95,6 +97,7 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
+  background: linear-gradient(180deg, rgba(17,26,44,0.9), rgba(10,14,28,0.72));
 }
 
 /* ============================================================
@@ -106,12 +109,13 @@ body {
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  width: 126px;
-  height: 37px;
-  background: #000;
+  width: 128px;
+  height: 38px;
+  background: linear-gradient(180deg, #121212 0%, #050505 100%);
   border-radius: 20px;
   z-index: 120;
   pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
 /* ============================================================
@@ -165,65 +169,323 @@ body {
   /* Wallpaper will be set via JS on #iphoneScreen */
 }
 
+.home-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top, rgba(255,255,255,0.18), transparent 28%),
+    linear-gradient(180deg, rgba(8,12,20,0.08), rgba(8,12,20,0.22));
+  pointer-events: none;
+}
+
 /* Icon Grid */
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px 8px;
-  padding: calc(var(--status-bar-height) + 20px) 16px 0;
+  gap: 18px 10px;
+  padding: calc(var(--status-bar-height) + 22px) 16px 0;
   align-items: start;
+  position: relative;
+  z-index: 1;
 }
 
 .app-icon {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform 0.16s ease, filter 0.16s ease;
 }
 
 .app-icon:active {
   transform: scale(0.88);
+  filter: brightness(0.96);
 }
 
 .icon-wrap {
   width: 60px;
   height: 60px;
-  border-radius: 14px;
+  border-radius: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  position: relative;
+  box-shadow:
+    0 12px 24px rgba(0,0,0,0.24),
+    0 2px 6px rgba(0,0,0,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.38),
+    inset 0 -2px 8px rgba(0,0,0,0.08);
   overflow: hidden;
 }
 
-.icon-wrap svg {
-  width: 42px;
-  height: 42px;
+.icon-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.02) 40%, transparent 70%);
+  pointer-events: none;
 }
 
-.icon-emoji {
-  font-size: 30px;
-  line-height: 1;
-  display: block;
+.icon-art,
+.icon-art span {
+  position: absolute;
 }
 
 /* Icon background colors */
-.icon-line     { background: #06C755; }
-.icon-contacts { background: linear-gradient(145deg, #f7971e, #ffd200); }
-.icon-worldbook{ background: linear-gradient(145deg, #0f2027, #2c5364); }
-.icon-wallpaper{ background: linear-gradient(145deg, #c471ed, #f64f59); }
-.icon-settings { background: linear-gradient(145deg, #757F9A, #D7DDE8); }
+.icon-messages {
+  background: linear-gradient(180deg, #45db79 0%, #28c95a 100%);
+}
+
+.icon-contacts {
+  background: linear-gradient(180deg, #ffc84d 0%, #ff9f0a 100%);
+}
+
+.icon-worldbook {
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255,255,255,0.25), transparent 22%),
+    linear-gradient(180deg, #2c8cff 0%, #1357d7 100%);
+}
+
+.icon-wallpaper {
+  background: linear-gradient(180deg, #ff6b8a 0%, #ff3b70 100%);
+}
+
+.icon-settings {
+  background: linear-gradient(180deg, #cfd3dc 0%, #8e97a8 100%);
+}
+
+.icon-art {
+  inset: 0;
+}
+
+.icon-art-messages .bubble-main {
+  width: 31px;
+  height: 24px;
+  background: #fff;
+  border-radius: 12px;
+  left: 14px;
+  top: 14px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+}
+
+.icon-art-messages .bubble-main::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  background: #fff;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.icon-art-messages .bubble-small {
+  width: 21px;
+  height: 17px;
+  background: rgba(255,255,255,0.92);
+  border-radius: 10px;
+  right: 10px;
+  bottom: 14px;
+}
+
+.icon-art-messages .bubble-small::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: -3px;
+  width: 7px;
+  height: 7px;
+  background: rgba(255,255,255,0.92);
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+}
+
+.icon-art-contacts .person-head {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff6d9;
+  left: 14px;
+  top: 13px;
+}
+
+.icon-art-contacts .person-body {
+  width: 26px;
+  height: 19px;
+  left: 10px;
+  bottom: 11px;
+  background: #fff6d9;
+  border-radius: 14px 14px 11px 11px;
+}
+
+.icon-art-contacts .person-card {
+  width: 18px;
+  height: 28px;
+  right: 11px;
+  top: 16px;
+  background: rgba(255,255,255,0.8);
+  border-radius: 6px;
+  box-shadow: inset 0 -8px 0 rgba(255,255,255,0.22);
+}
+
+.icon-art-contacts .person-card::before,
+.icon-art-contacts .person-card::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.7);
+}
+
+.icon-art-contacts .person-card::before {
+  top: 8px;
+}
+
+.icon-art-contacts .person-card::after {
+  top: 13px;
+}
+
+.icon-art-worldbook .book-cover {
+  width: 28px;
+  height: 32px;
+  left: 14px;
+  top: 15px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(214,233,255,0.95));
+  border-radius: 8px 3px 3px 8px;
+}
+
+.icon-art-worldbook .book-page {
+  width: 11px;
+  height: 30px;
+  right: 12px;
+  top: 16px;
+  background: rgba(255,255,255,0.76);
+  border-radius: 2px 7px 7px 2px;
+}
+
+.icon-art-worldbook .globe-ring {
+  width: 17px;
+  height: 17px;
+  right: 17px;
+  top: 21px;
+  border: 2px solid #2b78ff;
+  border-radius: 50%;
+  background: rgba(179,211,255,0.85);
+}
+
+.icon-art-worldbook .globe-line {
+  width: 11px;
+  height: 2px;
+  right: 20px;
+  background: #2b78ff;
+  border-radius: 2px;
+}
+
+.icon-art-worldbook .globe-line-1 {
+  top: 28px;
+}
+
+.icon-art-worldbook .globe-line-2 {
+  top: 24px;
+  width: 2px;
+  height: 11px;
+  right: 24px;
+}
+
+.icon-art-wallpaper .petal {
+  width: 18px;
+  height: 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,220,232,0.92));
+  border-radius: 18px 18px 4px 18px;
+  transform-origin: center bottom;
+}
+
+.icon-art-wallpaper .petal-1 {
+  left: 21px;
+  top: 10px;
+  transform: rotate(4deg);
+}
+
+.icon-art-wallpaper .petal-2 {
+  left: 12px;
+  top: 16px;
+  transform: rotate(-58deg);
+}
+
+.icon-art-wallpaper .petal-3 {
+  right: 12px;
+  top: 16px;
+  transform: scaleX(-1) rotate(-58deg);
+}
+
+.icon-art-wallpaper .petal-4 {
+  left: 16px;
+  bottom: 10px;
+  transform: rotate(126deg);
+}
+
+.icon-art-wallpaper .petal-5 {
+  right: 16px;
+  bottom: 10px;
+  transform: scaleX(-1) rotate(126deg);
+}
+
+.icon-art-settings .gear-ring {
+  width: 29px;
+  height: 29px;
+  left: 15px;
+  top: 15px;
+  border-radius: 50%;
+  border: 5px solid #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
+
+.icon-art-settings .gear-core {
+  width: 11px;
+  height: 11px;
+  left: 24px;
+  top: 24px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.98);
+  z-index: 1;
+}
+
+.icon-art-settings .gear-spoke {
+  width: 6px;
+  height: 14px;
+  left: 27px;
+  top: 10px;
+  background: #fff;
+  border-radius: 3px;
+}
+
+.icon-art-settings .gear-spoke-2 {
+  transform: rotate(45deg);
+  transform-origin: center 19px;
+}
+
+.icon-art-settings .gear-spoke-3 {
+  transform: rotate(90deg);
+  transform-origin: center 19px;
+}
+
+.icon-art-settings .gear-spoke-4 {
+  transform: rotate(135deg);
+  transform-origin: center 19px;
+}
 
 .icon-label {
-  font-size: 11px;
+  font-size: 12px;
   color: white;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.58);
   text-align: center;
-  font-weight: 500;
-  letter-spacing: -0.1px;
-  max-width: 70px;
+  font-weight: 600;
+  letter-spacing: -0.15px;
+  max-width: 74px;
   line-height: 1.2;
 }
 
@@ -233,6 +495,8 @@ body {
   justify-content: center;
   gap: 6px;
   padding-bottom: 12px;
+  position: relative;
+  z-index: 1;
 }
 
 .page-dot {
@@ -249,15 +513,20 @@ body {
 /* Dock */
 .dock {
   margin: 0 12px 16px;
-  background: rgba(255,255,255,0.18);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  background: rgba(248,249,255,0.2);
+  backdrop-filter: blur(34px) saturate(1.2);
+  -webkit-backdrop-filter: blur(34px) saturate(1.2);
   border-radius: 28px;
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.24),
+    0 14px 30px rgba(0,0,0,0.18);
   padding: 14px 20px;
   display: flex;
   justify-content: space-around;
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .dock-icon {
@@ -272,16 +541,7 @@ body {
 .dock-icon .icon-wrap {
   width: 56px;
   height: 56px;
-  border-radius: 13px;
-}
-
-.dock-icon .icon-wrap svg {
-  width: 38px;
-  height: 38px;
-}
-
-.dock-icon .icon-emoji {
-  font-size: 28px;
+  border-radius: 16px;
 }
 
 /* ============================================================
