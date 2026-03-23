@@ -29,6 +29,7 @@
   --phone-height: 852px;
   --phone-radius: 55px;
   --status-bar-height: 54px;
+  --ios-font-sans: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
@@ -187,6 +188,7 @@ body {
   flex-direction: column;
   justify-content: space-between;
   z-index: 1;
+  font-family: var(--ios-font-sans);
   /* Wallpaper will be set via JS on #iphoneScreen */
 }
 
@@ -308,10 +310,12 @@ body {
   color: white;
   text-shadow: 0 1px 4px rgba(0,0,0,0.58);
   text-align: center;
-  font-weight: 600;
-  letter-spacing: -0.15px;
+  font-family: var(--ios-font-sans);
+  font-weight: 500;
+  letter-spacing: -0.12px;
   max-width: 74px;
-  line-height: 1.2;
+  line-height: 1.15;
+  text-rendering: optimizeLegibility;
 }
 
 /* Page dots */
