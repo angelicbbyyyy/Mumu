@@ -95,13 +95,68 @@ function trimTrailingSlash(str) {
   return (str || '').replace(/\/+$/, '');
 }
 
-function joinUrl(base, path) {
+function trimLeadingSlash(str) {
+  return (str || '').replace(/^\/+/, '');
+}
+
+function splitAbsoluteUrl(raw) {
+  try {
+    const url = new URL(raw);
+    return {
+      origin: url.origin,
+      path: trimTrailingSlash(url.pathname || ''),
+      search: url.search || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function deriveRootPath(basePath, targetPath) {
+  const normalizedTarget = '/' + trimLeadingSlash(targetPath || '');
+  const normalizedBase = trimTrailingSlash(basePath || '');
+
+  if (!normalizedTarget || normalizedTarget === '/') return normalizedBase;
+  if (normalizedBase.endsWith(normalizedTarget)) {
+    const root = normalizedBase.slice(0, normalizedBase.length - normalizedTarget.length);
+    return root || '';
+  }
+  if (normalizedTarget.startsWith('/v1/') && normalizedBase.endsWith('/v1')) {
+    return normalizedBase;
+  }
+  return normalizedBase;
+}
+
+function joinUrl(base, path, relatedPath = '') {
   if (!path) return trimTrailingSlash(base);
   if (/^https?:\/\//i.test(path)) return path;
+
+  const absoluteBase = splitAbsoluteUrl(base);
+  const normalizedPath = '/' + trimLeadingSlash(path);
+  const normalizedRelated = relatedPath ? '/' + trimLeadingSlash(relatedPath) : '';
+
+  if (absoluteBase) {
+    if (absoluteBase.path.endsWith(normalizedPath)) {
+      return absoluteBase.origin + absoluteBase.path + absoluteBase.search;
+    }
+
+    const rootedPath = deriveRootPath(absoluteBase.path, normalizedRelated || normalizedPath);
+    if (rootedPath.endsWith('/v1') && normalizedPath.startsWith('/v1/')) {
+      return absoluteBase.origin + rootedPath + normalizedPath.slice(3) + absoluteBase.search;
+    }
+    if (rootedPath === normalizedPath) {
+      return absoluteBase.origin + rootedPath + absoluteBase.search;
+    }
+    return absoluteBase.origin + trimTrailingSlash(rootedPath) + normalizedPath + absoluteBase.search;
+  }
+
   const safeBase = trimTrailingSlash(base);
   if (!safeBase) return path;
   if (safeBase.endsWith(path)) return safeBase;
-  return safeBase + (path.startsWith('/') ? path : '/' + path);
+  if (safeBase.endsWith('/v1') && normalizedPath.startsWith('/v1/')) {
+    return safeBase + normalizedPath.slice(3);
+  }
+  return safeBase + normalizedPath;
 }
 
 function getProviderConfig() {
@@ -634,7 +689,7 @@ async function diagnoseNetworkError() {
 
   const { provider } = state.settings;
   const provDef = getProviderConfig();
-  const testUrl = joinUrl(provDef.baseUrl, provDef.chatPath || '');
+  const testUrl = joinUrl(provDef.baseUrl, provDef.chatPath || '', provDef.chatPath || '');
 
   if (provider === 'custom' && state.settings.connectionMode === 'proxy' && !getProxyEndpoint()) {
     return `Proxy mode is enabled, but this site is running on ${location.origin} and does not have a proxy endpoint.\n\nFor providers like NVIDIA that block direct browser calls, deploy this app on Netlify so /.netlify/functions/api is available.`;
@@ -701,7 +756,7 @@ async function callAPI(charId) {
 }
 
 async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic) {
-  const url = joinUrl(baseUrl, provDef.chatPath || '/v1/messages');
+  const url = joinUrl(baseUrl, provDef.chatPath || '/v1/messages', provDef.chatPath || '/v1/messages');
   const resp = await requestJson(url, {
     method: 'POST',
     headers: {
@@ -721,7 +776,7 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef =
 }
 
 async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.openai) {
-  const url = joinUrl(baseUrl, provDef.chatPath || '/chat/completions');
+  const url = joinUrl(baseUrl, provDef.chatPath || '/chat/completions', provDef.chatPath || '/chat/completions');
   const openAIMessages = [
     { role: 'system', content: system },
     ...messages,
@@ -759,7 +814,7 @@ async function fetchModels() {
   try {
     let models = [];
     if (provDef.format === 'anthropic') {
-      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/v1/models'), {
+      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/v1/models', provDef.chatPath || '/v1/messages'), {
         method: 'GET',
         headers: {
           ...buildAuthHeaders(provDef.auth || 'x-api-key', apiKey),
@@ -771,7 +826,7 @@ async function fetchModels() {
       const data = await resp.json();
       models = (data.data || []).map(m => m.id);
     } else {
-      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/models'), {
+      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/models', provDef.chatPath || '/chat/completions'), {
         method: 'GET',
         headers: buildAuthHeaders(provDef.auth || 'bearer', apiKey),
       }, provDef);
