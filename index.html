@@ -118,6 +118,13 @@
           <span class="icon-label">Contacts</span>
         </div>
 
+        <div class="app-icon" onclick="openApp('persona')">
+          <div class="icon-wrap icon-wallpaper">
+            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-wallpaper-svg"></use></svg>
+          </div>
+          <span class="icon-label">Persona</span>
+        </div>
+
         <div class="app-icon" onclick="openApp('worldbook')">
           <div class="icon-wrap icon-worldbook">
             <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-worldbook-svg"></use></svg>
@@ -125,19 +132,33 @@
           <span class="icon-label">World Book</span>
         </div>
 
-        <div class="app-icon" onclick="openWallpaperPicker()">
-          <div class="icon-wrap icon-wallpaper">
-            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-wallpaper-svg"></use></svg>
-          </div>
-          <span class="icon-label">Wallpaper</span>
-        </div>
+      </div>
 
+      <div class="home-focus-card" onclick="openApp('persona')">
+        <div class="home-focus-top">
+          <span class="home-focus-kicker">Mumu OS</span>
+          <span class="home-focus-pill">Prompt stack ready</span>
+        </div>
+        <div class="home-focus-title">Build the vibe first, then let every chat inherit it.</div>
+        <div class="home-focus-grid">
+          <div class="focus-stat">
+            <span class="focus-stat-label">Persona</span>
+            <strong id="homePersonaName">Default</strong>
+          </div>
+          <div class="focus-stat">
+            <span class="focus-stat-label">Characters</span>
+            <strong id="homeCharacterCount">0</strong>
+          </div>
+          <div class="focus-stat">
+            <span class="focus-stat-label">World Entries</span>
+            <strong id="homeWorldCount">0</strong>
+          </div>
+        </div>
       </div>
 
       <!-- Page dots -->
       <div class="page-dots">
         <div class="page-dot active"></div>
-        <div class="page-dot"></div>
       </div>
 
       <!-- Dock -->
@@ -152,9 +173,9 @@
             <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-contacts-svg"></use></svg>
           </div>
         </div>
-        <div class="dock-icon" onclick="openApp('worldbook')">
-          <div class="icon-wrap icon-worldbook">
-            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-worldbook-svg"></use></svg>
+        <div class="dock-icon" onclick="openApp('persona')">
+          <div class="icon-wrap icon-wallpaper">
+            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-wallpaper-svg"></use></svg>
           </div>
         </div>
         <div class="dock-icon" onclick="openApp('settings')">
@@ -282,6 +303,11 @@
         <span class="app-nav-title">Contacts</span>
         <button class="app-nav-action" onclick="openAddCharSheet()" style="color:#007AFF;font-size:24px;background:none;border:none;cursor:pointer;">+</button>
       </div>
+      <div class="app-intro-card">
+        <div class="app-intro-kicker">Character roster</div>
+        <div class="app-intro-title">Every bot should feel like a real contact on the phone.</div>
+        <div class="app-intro-sub">Create people first: name, vibe, relationship energy, and the prompt that shapes how they text.</div>
+      </div>
       <div class="app-search-bar-wrap">
         <div class="app-search-bar">
           <span>🔍</span>
@@ -303,10 +329,69 @@
         <span class="app-nav-title">World Book</span>
         <button class="app-nav-action" onclick="addWorldBookEntry()" style="color:#007AFF;font-size:24px;background:none;border:none;cursor:pointer;">+</button>
       </div>
-      <div style="padding:0 16px 8px;font-size:13px;color:#8E8E93;line-height:1.4;">
-        Global prompts injected into every conversation.
+      <div class="app-intro-card compact">
+        <div class="app-intro-kicker">Lore engine</div>
+        <div class="app-intro-title">Shared facts, rules, and universe context.</div>
+        <div class="app-intro-sub">These entries can shape every conversation before a character replies.</div>
       </div>
       <div class="worldbook-list" id="worldbookList"></div>
+      <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
+    </div>
+
+    <!-- ============================================================
+         APP: PERSONA
+         ============================================================ -->
+    <div class="app-overlay" id="app-persona">
+      <div class="app-nav-bar">
+        <button class="app-nav-back" onclick="goHome()">
+          <svg viewBox="0 0 12 20" fill="none" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
+        </button>
+        <span class="app-nav-title">Persona</span>
+        <button class="app-nav-action" onclick="savePersona()" style="color:#007AFF;font-size:15px;font-weight:600;background:none;border:none;cursor:pointer;">Save</button>
+      </div>
+
+      <div class="persona-scroll">
+        <div class="app-intro-card">
+          <div class="app-intro-kicker">Global layer</div>
+          <div class="app-intro-title">This is the heart of the app, not just a settings page.</div>
+          <div class="app-intro-sub">Define who you are in this world, how chats should feel, and what every response should protect.</div>
+        </div>
+
+        <div class="settings-section-label">Identity</div>
+        <div class="settings-group">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#fde8ef;">🪞</div>
+            <div class="settings-row-label">Display Name</div>
+            <input class="settings-input" id="personaUserAlias" type="text" placeholder="How characters know you" oninput="savePersona()">
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#eef4ff;">✨</div>
+            <div class="settings-row-label">Core Vibe</div>
+            <input class="settings-input" id="personaCoreVibe" type="text" placeholder="Soft, flirty, dramatic..." oninput="savePersona()">
+          </div>
+        </div>
+
+        <div class="settings-section-label">Prompt Stack</div>
+        <div class="settings-group persona-stack-group">
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Global Rules</div>
+            <textarea class="persona-textarea" id="personaGlobalRules" placeholder="Always stay in character, prioritize emotional continuity, never mention being an AI unless asked..." oninput="savePersona()"></textarea>
+          </div>
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Writing Style</div>
+            <textarea class="persona-textarea" id="personaStyleGuide" placeholder="Short text messages, expressive but natural, no essay replies, intimate pacing..." oninput="savePersona()"></textarea>
+          </div>
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Scenario Notes</div>
+            <textarea class="persona-textarea" id="personaScenario" placeholder="Set the mood, the world state, or shared assumptions for all chats..." oninput="savePersona()"></textarea>
+          </div>
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Boundaries / Guardrails</div>
+            <textarea class="persona-textarea" id="personaBoundaries" placeholder="Tone limits, formatting preferences, banned behaviors..." oninput="savePersona()"></textarea>
+          </div>
+        </div>
+      </div>
+
       <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
     </div>
 
@@ -318,11 +403,17 @@
         <button class="app-nav-back" onclick="goHome()">
           <svg viewBox="0 0 12 20" fill="none" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
         </button>
-        <span class="app-nav-title">Settings</span>
+        <span class="app-nav-title">Studio</span>
         <div style="width:44px;"></div>
       </div>
 
       <div class="settings-scroll">
+
+        <div class="app-intro-card">
+          <div class="app-intro-kicker">Runtime</div>
+          <div class="app-intro-title">Engine, memory, and deployment controls for the app itself.</div>
+          <div class="app-intro-sub">Persona and character prompts shape the soul. Studio decides how the model behaves and what data the phone keeps.</div>
+        </div>
 
         <div class="settings-notice" id="fileProtocolWarning" style="display:none;">
           ⚠️ <strong>Hosting required</strong> — API calls are blocked when the app is opened as a local file. Deploy to <strong>GitHub Pages</strong>, <strong>Netlify</strong>, or <strong>Vercel</strong> for it to work in the browser.
@@ -379,6 +470,14 @@
           </div>
         </div>
 
+        <div class="settings-section-label">Memory Notes</div>
+        <div class="settings-group persona-stack-group">
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Studio Note</div>
+            <textarea class="persona-textarea" id="settingsMemoryNote" placeholder="Optional private note about the app state, long-term memory direction, or testing notes..." oninput="saveSettings()"></textarea>
+          </div>
+        </div>
+
         <div class="settings-section-label">Data</div>
         <div class="settings-group">
           <div class="settings-row" style="cursor:pointer;" onclick="clearAllChats()">
@@ -388,8 +487,8 @@
         </div>
 
         <div class="settings-footer">
-          iPhone Chatbot Simulator<br>
-          Supports Anthropic, OpenAI, Groq &amp; Custom APIs
+          Mumu Studio<br>
+          Character phone UX with layered prompts and multi-provider APIs
         </div>
 
       </div><!-- /settings-scroll -->
