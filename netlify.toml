@@ -1,9 +1,6 @@
 [build]
   publish = "."
 
-[functions]
-  directory = "netlify/functions"
-
 [[headers]]
   for = "/*"
   [headers.values]

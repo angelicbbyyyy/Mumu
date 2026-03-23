@@ -399,41 +399,8 @@
         </div>
 
         <div class="settings-group" id="customProviderGroup" style="display:none;">
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:#eef7ff;">🌉</div>
-            <div class="settings-row-label">Connection</div>
-            <select class="settings-select" id="settingsConnectionMode" onchange="saveSettings()">
-              <option value="auto">Auto</option>
-              <option value="proxy">Proxy</option>
-              <option value="direct">Direct</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:#eef2ff;">🧩</div>
-            <div class="settings-row-label">Format</div>
-            <select class="settings-select" id="settingsCustomFormat" onchange="saveSettings()">
-              <option value="openai">OpenAI Compatible</option>
-              <option value="anthropic">Anthropic Compatible</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:#eefdf5;">🪪</div>
-            <div class="settings-row-label">Auth</div>
-            <select class="settings-select" id="settingsCustomAuth" onchange="saveSettings()">
-              <option value="bearer">Bearer Token</option>
-              <option value="x-api-key">x-api-key</option>
-              <option value="none">No Auth Header</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:#fff7e8;">↗️</div>
-            <div class="settings-row-label">Chat Path</div>
-            <input class="settings-input settings-input-left" id="settingsCustomChatPath" type="text" placeholder="/chat/completions" oninput="saveSettings()">
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon" style="background:#f6efff;">📦</div>
-            <div class="settings-row-label">Models Path</div>
-            <input class="settings-input settings-input-left" id="settingsCustomModelsPath" type="text" placeholder="/models" oninput="saveSettings()">
+          <div class="settings-row-help">
+            Custom works best with OpenAI-compatible APIs that support browser requests.
           </div>
         </div>
 

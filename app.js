@@ -29,11 +29,6 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
-    customFormat: 'openai',
-    customAuth: 'bearer',
-    customChatPath: '/chat/completions',
-    customModelsPath: '/models',
-    connectionMode: 'auto',
   },
   wallpaper: null,             // CSS background value
   editingCharId: null,
@@ -167,10 +162,10 @@ function getProviderConfig() {
   return {
     label: 'Custom',
     baseUrl: trimTrailingSlash(state.settings.baseUrl || ''),
-    chatPath: state.settings.customChatPath || '/chat/completions',
-    modelsPath: state.settings.customModelsPath || '/models',
-    format: state.settings.customFormat || 'openai',
-    auth: state.settings.customAuth || 'bearer',
+    chatPath: '/chat/completions',
+    modelsPath: '/models',
+    format: 'openai',
+    auth: 'bearer',
     defaultModels: [],
   };
 }
@@ -181,43 +176,8 @@ function buildAuthHeaders(authMode, apiKey) {
   return { 'Authorization': `Bearer ${apiKey}` };
 }
 
-function getProxyEndpoint() {
-  if (/netlify\.app$/i.test(location.hostname) || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-    return '/.netlify/functions/api';
-  }
-  return '';
-}
-
-function shouldUseProxy(provDef) {
-  const mode = state.settings.connectionMode || 'auto';
-  if (mode === 'direct') return false;
-  if (mode === 'proxy') return Boolean(getProxyEndpoint());
-  return Boolean(getProxyEndpoint()) && (state.settings.provider === 'custom');
-}
-
-async function proxyFetch(url, options = {}) {
-  const endpoint = getProxyEndpoint();
-  if (!endpoint) throw new TypeError('Proxy endpoint unavailable on this host.');
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      url,
-      method: options.method || 'POST',
-      headers: options.headers || {},
-      body: options.body ? JSON.parse(options.body) : null,
-    }),
-  });
-
-  return response;
-}
-
 async function requestJson(url, options, provDef) {
-  const response = shouldUseProxy(provDef)
-    ? await proxyFetch(url, options)
-    : await fetch(url, options);
-  return response;
+  return fetch(url, options);
 }
 
 // ============================================================
@@ -691,10 +651,6 @@ async function diagnoseNetworkError() {
   const provDef = getProviderConfig();
   const testUrl = joinUrl(provDef.baseUrl, provDef.chatPath || '', provDef.chatPath || '');
 
-  if (provider === 'custom' && state.settings.connectionMode === 'proxy' && !getProxyEndpoint()) {
-    return `Proxy mode is enabled, but this site is running on ${location.origin} and does not have a proxy endpoint.\n\nFor providers like NVIDIA that block direct browser calls, deploy this app on Netlify so /.netlify/functions/api is available.`;
-  }
-
   try {
     const resp = await fetch(testUrl, {
       method: 'OPTIONS',
@@ -866,18 +822,8 @@ function renderSettings() {
   if (provEl) provEl.value = s.provider || 'anthropic';
   document.getElementById('settingsApiKey').value = s.apiKey || '';
   document.getElementById('settingsUserName').value = s.userName || '';
-  const connectionEl = document.getElementById('settingsConnectionMode');
-  if (connectionEl) connectionEl.value = s.connectionMode || 'auto';
   const customModelEl = document.getElementById('settingsCustomModel');
   if (customModelEl) customModelEl.value = s.model || '';
-  const formatEl = document.getElementById('settingsCustomFormat');
-  if (formatEl) formatEl.value = s.customFormat || 'openai';
-  const authEl = document.getElementById('settingsCustomAuth');
-  if (authEl) authEl.value = s.customAuth || 'bearer';
-  const chatPathEl = document.getElementById('settingsCustomChatPath');
-  if (chatPathEl) chatPathEl.value = s.customChatPath || '/chat/completions';
-  const modelsPathEl = document.getElementById('settingsCustomModelsPath');
-  if (modelsPathEl) modelsPathEl.value = s.customModelsPath || '/models';
   const memoryEl = document.getElementById('settingsMemoryNote');
   if (memoryEl) memoryEl.value = s.memoryNote || '';
   renderModelSelect();
@@ -941,11 +887,6 @@ function saveSettings() {
     : (document.getElementById('settingsModel')?.value || state.settings.model);
   state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
   state.settings.memoryNote = document.getElementById('settingsMemoryNote')?.value?.trim() || '';
-  state.settings.connectionMode = document.getElementById('settingsConnectionMode')?.value || state.settings.connectionMode;
-  state.settings.customFormat = document.getElementById('settingsCustomFormat')?.value || state.settings.customFormat;
-  state.settings.customAuth = document.getElementById('settingsCustomAuth')?.value || state.settings.customAuth;
-  state.settings.customChatPath = document.getElementById('settingsCustomChatPath')?.value?.trim() || '/chat/completions';
-  state.settings.customModelsPath = document.getElementById('settingsCustomModelsPath')?.value?.trim() || '/models';
   saveState();
 }
 
