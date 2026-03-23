@@ -263,8 +263,8 @@ body {
 /* Icon background colors */
 .icon-messages {
   background:
-    radial-gradient(circle at 50% 120%, rgba(123, 255, 161, 0.32), transparent 40%),
-    linear-gradient(180deg, #51E96A 0%, #29CC41 100%);
+    radial-gradient(circle at 50% 120%, rgba(109, 255, 109, 0.28), transparent 42%),
+    linear-gradient(180deg, #06d000 0%, #00c300 100%);
 }
 
 .icon-contacts {
