@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iPhone Chatbot Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ====================================================
+       iPhone Shell
+       ==================================================== -->
+  <div class="iphone" id="iphone">
+    <div class="iphone-screen">
+
+      <!-- Dynamic Island -->
+      <div class="dynamic-island"></div>
+
+      <!-- Status Bar -->
+      <div class="status-bar" id="statusBar">
+        <span class="status-bar-time" id="statusTime">9:41</span>
+        <div class="status-bar-icons">
+          <!-- Signal -->
+          <svg width="17" height="12" viewBox="0 0 17 12">
+            <rect x="0" y="7" width="3" height="5" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5"/>
+            <rect x="9" y="2.5" width="3" height="9.5" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5"/>
+          </svg>
+          <!-- WiFi -->
+          <svg width="16" height="12" viewBox="0 0 16 12">
+            <path d="M8 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
+            <path d="M8 6C5.8 6 3.8 6.9 2.3 8.4L.9 7C2.8 5.1 5.3 4 8 4s5.2 1.1 7.1 3l-1.4 1.4C12.2 6.9 10.2 6 8 6z"/>
+            <path d="M8 2C4.7 2 1.7 3.4 0 5.7L-1.4 4.3C.7 1.6 4.1 0 8 0s7.3 1.6 9.4 4.3L16 5.7C14.3 3.4 11.3 2 8 2z" opacity="0"/>
+          </svg>
+          <!-- Battery -->
+          <svg width="25" height="12" viewBox="0 0 25 12">
+            <rect x="0" y="1" width="21" height="10" rx="2.5" stroke="#000" stroke-width="1" fill="none"/>
+            <rect x="22" y="3.5" width="2.5" height="5" rx="1.25"/>
+            <rect x="1.5" y="2.5" width="16" height="7" rx="1.5"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Screen Content Wrapper -->
+      <div class="screen-content" id="screenContent">
+
+        <!-- Toast -->
+        <div class="toast" id="toast"></div>
+
+        <!-- ================================================
+             MESSAGES SECTION
+             ================================================ -->
+        <div class="section-view active" id="view-messages">
+
+          <!-- Chat View (overlays conversation list when open) -->
+          <div class="chat-view" id="chatView">
+            <div class="chat-nav">
+              <button class="chat-nav-back" onclick="closeChat()">
+                <svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="10 1 1 10 10 19"/>
+                </svg>
+                Back
+              </button>
+              <div class="chat-nav-identity">
+                <div class="chat-nav-avatar" id="chatNavAvatar">🌸</div>
+                <div class="chat-nav-name" id="chatNavName">Aria</div>
+                <div class="chat-nav-status">online</div>
+              </div>
+              <button class="chat-nav-action" onclick="openCharDetailFromChat()" title="Character info">ⓘ</button>
+            </div>
+
+            <div class="messages-area" id="messagesArea"></div>
+
+            <div class="chat-input-bar">
+              <div class="chat-input-wrap">
+                <textarea
+                  class="chat-input"
+                  id="chatInput"
+                  placeholder="Message"
+                  rows="1"
+                  onkeydown="handleInputKeydown(event)"
+                  oninput="autoResize(this); updateSendBtn()"
+                ></textarea>
+              </div>
+              <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+                <svg viewBox="0 0 16 16"><path d="M8 1L8 15M8 1L2 7M8 1L14 7" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Conversation List -->
+          <div style="display:flex;flex-direction:column;height:100%;" id="convListWrapper">
+            <div class="large-title-header" style="padding-top:8px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <h1>Messages</h1>
+                <button class="nav-action" onclick="openNewChatSheet()" style="font-size:26px;background:none;border:none;color:var(--ios-blue);cursor:pointer;">✎</button>
+              </div>
+            </div>
+            <div class="search-bar-wrap">
+              <div class="search-bar">
+                <span class="search-bar-icon">🔍</span>
+                <input type="text" placeholder="Search" oninput="filterConversations(this.value)">
+              </div>
+            </div>
+            <div class="conversation-list" id="conversationList"></div>
+          </div>
+        </div>
+
+        <!-- ================================================
+             CONTACTS SECTION
+             ================================================ -->
+        <div class="section-view" id="view-contacts">
+          <div class="large-title-header" style="padding-top:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <h1>Contacts</h1>
+              <button style="background:none;border:none;color:var(--ios-blue);font-size:26px;cursor:pointer;" onclick="openAddCharSheet()">+</button>
+            </div>
+          </div>
+          <div class="search-bar-wrap">
+            <div class="search-bar">
+              <span class="search-bar-icon">🔍</span>
+              <input type="text" placeholder="Search contacts" oninput="filterContacts(this.value)">
+            </div>
+          </div>
+          <div class="contacts-list" id="contactsList"></div>
+        </div>
+
+        <!-- ================================================
+             WORLD BOOK SECTION
+             ================================================ -->
+        <div class="section-view" id="view-worldbook">
+          <div class="large-title-header" style="padding-top:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <h1>World Book</h1>
+              <button style="background:none;border:none;color:var(--ios-blue);font-size:26px;cursor:pointer;" onclick="addWorldBookEntry()">+</button>
+            </div>
+          </div>
+          <div style="padding:0 16px 8px;font-size:13px;color:var(--ios-gray);line-height:1.4;">
+            Global prompts included in every conversation.
+          </div>
+          <div class="worldbook-list" id="worldbookList"></div>
+        </div>
+
+        <!-- ================================================
+             SETTINGS SECTION
+             ================================================ -->
+        <div class="section-view" id="view-settings">
+          <div class="large-title-header" style="padding-top:8px;"><h1>Settings</h1></div>
+          <div class="settings-scroll">
+
+            <div class="settings-section-header">API Configuration</div>
+            <div class="settings-group">
+              <div class="settings-row">
+                <div class="settings-row-icon" style="background:#e8f4fd;">🔑</div>
+                <div class="settings-row-label">API Key</div>
+                <input
+                  class="settings-input"
+                  id="settingsApiKey"
+                  type="password"
+                  placeholder="sk-ant-..."
+                  autocomplete="off"
+                  oninput="saveApiKey()"
+                >
+              </div>
+              <div class="settings-row">
+                <div class="settings-row-icon" style="background:#f0e8fd;">🤖</div>
+                <div class="settings-row-label">Model</div>
+                <select class="settings-select" id="settingsModel" onchange="saveModel()">
+                  <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                  <option value="claude-opus-4-6">Opus 4.6</option>
+                  <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-section-header">User Profile</div>
+            <div class="settings-group">
+              <div class="settings-row">
+                <div class="settings-row-icon" style="background:#fde8e8;">👤</div>
+                <div class="settings-row-label">Your Name</div>
+                <input
+                  class="settings-input"
+                  id="settingsUserName"
+                  type="text"
+                  placeholder="You"
+                  oninput="saveUserName()"
+                >
+              </div>
+            </div>
+
+            <div class="settings-section-header">Data</div>
+            <div class="settings-group">
+              <div class="settings-row" style="cursor:pointer;" onclick="clearAllChats()">
+                <div class="settings-row-icon" style="background:#fff0ef;">🗑️</div>
+                <div class="settings-row-label" style="color:var(--ios-red);">Clear All Chat History</div>
+              </div>
+            </div>
+
+            <div class="settings-footer">
+              iPhone Chatbot Simulator<br>
+              Powered by Claude API
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /screen-content -->
+
+      <!-- ====================================================
+           Tab Bar
+           ==================================================== -->
+      <div class="tab-bar">
+        <div class="tab-item active" id="tab-messages" onclick="switchTab('messages')">
+          <div class="tab-icon">
+            <svg viewBox="0 0 28 28" fill="#8E8E93">
+              <path d="M4 4h20a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H8l-5 4V6a2 2 0 0 1 2-2z" stroke="none"/>
+            </svg>
+          </div>
+          <span class="tab-label">Messages</span>
+        </div>
+        <div class="tab-item" id="tab-contacts" onclick="switchTab('contacts')">
+          <div class="tab-icon">
+            <svg viewBox="0 0 28 28" fill="#8E8E93">
+              <circle cx="14" cy="10" r="5"/>
+              <path d="M4 24c0-5.5 4.5-10 10-10s10 4.5 10 10" stroke="none"/>
+            </svg>
+          </div>
+          <span class="tab-label">Contacts</span>
+        </div>
+        <div class="tab-item" id="tab-worldbook" onclick="switchTab('worldbook')">
+          <div class="tab-icon">
+            <svg viewBox="0 0 28 28" fill="#8E8E93">
+              <path d="M6 4h13a3 3 0 0 1 3 3v15a3 3 0 0 1-3 3H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+              <line x1="9" y1="10" x2="19" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="9" y1="14" x2="19" y2="14" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="9" y1="18" x2="15" y2="18" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="tab-label">World Book</span>
+        </div>
+        <div class="tab-item" id="tab-settings" onclick="switchTab('settings')">
+          <div class="tab-icon">
+            <svg viewBox="0 0 28 28" fill="#8E8E93">
+              <path d="M14 17.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
+              <path d="M22.6 13.1l1.4-1.6-2-3.5-2.1.7c-.4-.3-.9-.6-1.4-.8L18 6h-4l-.5 2c-.5.2-1 .5-1.4.8l-2.1-.7-2 3.5 1.4 1.6c0 .3-.1.6-.1.9s0 .6.1.9l-1.4 1.6 2 3.5 2.1-.7c.4.3.9.6 1.4.8L14 22h4l.5-2c.5-.2 1-.5 1.4-.8l2.1.7 2-3.5-1.4-1.6c.1-.3.1-.6.1-.9s0-.6-.1-.9z"/>
+            </svg>
+          </div>
+          <span class="tab-label">Settings</span>
+        </div>
+      </div>
+
+    </div><!-- /iphone-screen -->
+  </div><!-- /iphone -->
+
+  <!-- ====================================================
+       Character Modal Sheet
+       ==================================================== -->
+  <div class="modal-overlay" id="charModal" onclick="closeCharModal(event)">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title" id="charModalTitle">New Character</div>
+
+      <div class="form-section">
+        <div class="form-row">
+          <span class="form-label">Avatar</span>
+          <input class="form-input" id="charAvatar" type="text" placeholder="🌸" maxlength="2">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Name</span>
+          <input class="form-input" id="charName" type="text" placeholder="Character name">
+        </div>
+        <div class="form-row form-textarea-row">
+          <span class="form-label">Description</span>
+          <textarea class="form-textarea" id="charDesc" placeholder="Short description (shown in contacts)..." rows="2"></textarea>
+        </div>
+        <div class="form-row form-textarea-row">
+          <span class="form-label">Persona / System Prompt</span>
+          <textarea class="form-textarea" id="charSystem" placeholder="You are [character name], a..." rows="4"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeCharModal()">Cancel</button>
+        <button class="btn btn-danger" id="charDeleteBtn" onclick="deleteCharacter()" style="display:none;">Delete</button>
+        <button class="btn btn-primary" onclick="saveCharacter()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
