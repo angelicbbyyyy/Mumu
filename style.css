@@ -234,11 +234,12 @@ body {
   justify-content: center;
   position: relative;
   box-shadow:
-    0 12px 24px rgba(0,0,0,0.24),
-    0 2px 6px rgba(0,0,0,0.16),
-    inset 0 1px 0 rgba(255,255,255,0.38),
-    inset 0 -2px 8px rgba(0,0,0,0.08);
+    0 16px 28px rgba(0,0,0,0.3),
+    0 4px 10px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.15),
+    inset 0 -12px 20px rgba(0,0,0,0.24);
   overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 .icon-wrap::before {
@@ -246,7 +247,9 @@ body {
   position: absolute;
   inset: 1px;
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.02) 40%, transparent 70%);
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255,255,255,0.18), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 40%, transparent 72%);
   pointer-events: none;
 }
 
@@ -259,25 +262,33 @@ body {
 
 /* Icon background colors */
 .icon-messages {
-  background: linear-gradient(180deg, #45db79 0%, #28c95a 100%);
+  background:
+    radial-gradient(circle at 50% 120%, rgba(58, 214, 104, 0.24), transparent 40%),
+    linear-gradient(180deg, #2d2d31 0%, #111214 100%);
 }
 
 .icon-contacts {
-  background: linear-gradient(180deg, #ffc84d 0%, #ff9f0a 100%);
+  background:
+    radial-gradient(circle at 72% 20%, rgba(255,255,255,0.08), transparent 24%),
+    linear-gradient(180deg, #303238 0%, #15161a 100%);
 }
 
 .icon-worldbook {
   background:
-    radial-gradient(circle at 30% 24%, rgba(255,255,255,0.25), transparent 22%),
-    linear-gradient(180deg, #2c8cff 0%, #1357d7 100%);
+    radial-gradient(circle at 34% 16%, rgba(255,208,102,0.18), transparent 22%),
+    linear-gradient(180deg, #33281a 0%, #141312 100%);
 }
 
 .icon-wallpaper {
-  background: linear-gradient(180deg, #ff6b8a 0%, #ff3b70 100%);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255,255,255,0.12), transparent 20%),
+    linear-gradient(180deg, #26242d 0%, #111114 100%);
 }
 
 .icon-settings {
-  background: linear-gradient(180deg, #cfd3dc 0%, #8e97a8 100%);
+  background:
+    radial-gradient(circle at 42% 15%, rgba(255,255,255,0.18), transparent 24%),
+    linear-gradient(180deg, #36383f 0%, #15161a 100%);
 }
 
 .icon-label {
