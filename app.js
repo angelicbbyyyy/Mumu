@@ -11,9 +11,11 @@
 const state = {
   currentApp: null,            // 'messages' | 'contacts' | 'worldbook' | 'persona' | 'settings' | null
   activeChat: null,            // character id currently open in LINE chat
+  lineTab: 'chats',
   characters: [],
   conversations: {},           // { charId: [{role, content, ts, read}] }
   worldBook: [],
+  voomPosts: [],
   persona: {
     userAlias: 'You',
     coreVibe: 'Soft, intimate, and immersive',
@@ -190,6 +192,7 @@ function saveState() {
       characters: state.characters,
       conversations: state.conversations,
       worldBook: state.worldBook,
+      voomPosts: state.voomPosts,
       persona: state.persona,
       settings: state.settings,
       wallpaper: state.wallpaper,
@@ -205,6 +208,7 @@ function loadState() {
     if (s.characters)    state.characters    = s.characters;
     if (s.conversations) state.conversations = s.conversations;
     if (s.worldBook)     state.worldBook     = s.worldBook;
+    if (s.voomPosts)     state.voomPosts     = s.voomPosts;
     if (s.persona)       Object.assign(state.persona, s.persona);
     if (s.settings)      Object.assign(state.settings, s.settings);
     if (s.wallpaper)     state.wallpaper     = s.wallpaper;
@@ -344,7 +348,7 @@ function openApp(name) {
 
   // Refresh content
   if (name === 'persona') renderPersona();
-  if (name === 'messages') renderLINEConvList();
+  if (name === 'messages') renderLINEHome();
   if (name === 'contacts') renderContactsList();
   if (name === 'worldbook') renderWorldBook();
   if (name === 'settings') renderSettings();
@@ -363,6 +367,65 @@ function goHome() {
 // ============================================================
 // LINE — Conversation List
 // ============================================================
+
+function renderLINEHome() {
+  renderLINEHeader();
+  renderLINEPanels();
+}
+
+function renderLINEHeader() {
+  const titleMap = {
+    chats: 'Chats',
+    voom: 'VOOM',
+    contacts: 'Friends',
+    profile: 'Profile',
+  };
+  const titleEl = document.getElementById('lineListTitle');
+  if (titleEl) titleEl.textContent = titleMap[state.lineTab] || 'Chats';
+
+  const searchBar = document.getElementById('lineSearchBar');
+  const searchInput = document.getElementById('lineSearchInput');
+  if (searchBar) searchBar.style.display = state.lineTab === 'profile' ? 'none' : '';
+  if (searchInput) {
+    searchInput.placeholder = state.lineTab === 'contacts' ? 'Search friends' : state.lineTab === 'voom' ? 'Search posts' : 'Search';
+    searchInput.value = '';
+  }
+}
+
+function renderLINEPanels() {
+  const panelMap = {
+    chats: 'lineChatsPanel',
+    voom: 'lineVoomPanel',
+    contacts: 'lineContactsPanel',
+    profile: 'lineProfilePanel',
+  };
+  ['chats', 'voom', 'contacts', 'profile'].forEach(tab => {
+    document.getElementById(panelMap[tab])?.classList.toggle('line-panel-active', tab === state.lineTab);
+    document.getElementById('lineTab' + tab.charAt(0).toUpperCase() + tab.slice(1))?.classList.toggle('active', tab === state.lineTab);
+  });
+
+  if (state.lineTab === 'chats') renderLINEConvList();
+  if (state.lineTab === 'voom') renderVoomFeed();
+  if (state.lineTab === 'contacts') renderLineContactsPane();
+  if (state.lineTab === 'profile') renderLineProfilePane();
+}
+
+function setLineTab(tab) {
+  state.lineTab = tab;
+  renderLINEHome();
+}
+
+function openLinePrimaryAction() {
+  if (state.lineTab === 'voom') {
+    openVoomComposer();
+    return;
+  }
+  if (state.lineTab === 'contacts') {
+    openAddCharSheet();
+    return;
+  }
+  openNewChatSheet();
+}
 
 function renderLINEConvList(filter = '') {
   const container = document.getElementById('lineConvList');
@@ -407,6 +470,18 @@ function renderLINEConvList(filter = '') {
 }
 
 function filterLineConvs(val) {
+  renderLINEConvList(val);
+}
+
+function handleLineSearch(val) {
+  if (state.lineTab === 'contacts') {
+    renderLineContactsPane(val);
+    return;
+  }
+  if (state.lineTab === 'voom') {
+    renderVoomFeed(val);
+    return;
+  }
   renderLINEConvList(val);
 }
 
@@ -1049,6 +1124,173 @@ function openNewChatSheet() {
   // else: already on messages list, just show it
 }
 
+function renderLineContactsPane(filter = '') {
+  const container = document.getElementById('lineContactsPane');
+  if (!container) return;
+  const chars = state.characters.filter(c => !filter || c.name.toLowerCase().includes(filter.toLowerCase()));
+  if (!chars.length) {
+    container.innerHTML = '<div class="line-empty-note">No friends yet. Add a character to bring the app to life.</div>';
+    return;
+  }
+
+  container.innerHTML = chars.map(char => `
+    <div class="line-conv-item" onclick="openLINEChat('${char.id}')">
+      <div class="line-conv-avatar">${escHtml(char.avatar || '🤖')}</div>
+      <div class="line-conv-info">
+        <div class="line-conv-top">
+          <span class="line-conv-name">${escHtml(char.name)}</span>
+        </div>
+        <div class="line-conv-preview">${escHtml(char.description || 'Tap to open chat')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderLineProfilePane() {
+  const container = document.getElementById('lineProfilePane');
+  if (!container) return;
+  const userName = state.persona.userAlias || state.settings.userName || 'You';
+  container.innerHTML = `
+    <div class="line-profile-card">
+      <div class="line-profile-hero">
+        <div class="line-profile-avatar">😊</div>
+        <div>
+          <div class="line-profile-name">${escHtml(userName)}</div>
+          <div class="line-profile-sub">${escHtml(state.persona.coreVibe || 'Living inside a tiny green phone universe')}</div>
+        </div>
+      </div>
+      <div class="line-profile-stats">
+        <div class="line-profile-stat">
+          <span>Friends</span>
+          <strong>${state.characters.length}</strong>
+        </div>
+        <div class="line-profile-stat">
+          <span>Posts</span>
+          <strong>${state.voomPosts.filter(p => p.authorType === 'user').length}</strong>
+        </div>
+        <div class="line-profile-stat">
+          <span>Chats</span>
+          <strong>${Object.keys(state.conversations).filter(id => (state.conversations[id] || []).length).length}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderVoomFeed(filter = '') {
+  const container = document.getElementById('lineVoomFeed');
+  if (!container) return;
+  const posts = [...state.voomPosts]
+    .filter(post => {
+      if (!filter) return true;
+      const haystack = `${post.authorName} ${post.caption} ${(post.comments || []).map(c => c.text).join(' ')}`.toLowerCase();
+      return haystack.includes(filter.toLowerCase());
+    })
+    .sort((a, b) => b.ts - a.ts);
+
+  if (!posts.length) {
+    container.innerHTML = '<div class="line-empty-note">No VOOM posts yet. Share a photo and let the characters react.</div>';
+    return;
+  }
+
+  container.innerHTML = posts.map(post => `
+    <div class="line-voom-card">
+      <div class="line-voom-head">
+        <div class="line-voom-avatar">${escHtml(post.avatar || '🙂')}</div>
+        <div class="line-voom-meta">
+          <div class="line-voom-name">${escHtml(post.authorName)}</div>
+          <div class="line-voom-time">${escHtml(formatShortTime(post.ts))}</div>
+        </div>
+      </div>
+      ${post.caption ? `<div class="line-voom-text">${escHtml(post.caption)}</div>` : ''}
+      ${post.image ? `<img class="line-voom-image" src="${escHtml(post.image)}" alt="VOOM post image">` : ''}
+      <div class="line-voom-actions">
+        <span>${post.likes || 0} likes</span>
+        <span>${(post.comments || []).length} comments</span>
+      </div>
+      ${(post.comments || []).length ? `
+        <div class="line-voom-comments">
+          ${post.comments.map(comment => `<div class="line-voom-comment"><b>${escHtml(comment.authorName)}:</b> ${escHtml(comment.text)}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+function openVoomComposer() {
+  document.getElementById('voomCaption').value = '';
+  document.getElementById('voomImageUrl').value = '';
+  document.getElementById('voomImagePreview').innerHTML = 'No image selected';
+  document.getElementById('voomImageInput').value = '';
+  delete state.pendingVoomImage;
+  document.getElementById('voomModal').classList.add('open');
+}
+
+function closeVoomComposer(event) {
+  if (event && event.target !== document.getElementById('voomModal')) return;
+  document.getElementById('voomModal').classList.remove('open');
+}
+
+function handleVoomImageChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.pendingVoomImage = reader.result;
+    document.getElementById('voomImagePreview').innerHTML = `<img src="${escHtml(reader.result)}" alt="Preview">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function previewVoomImageUrl(url) {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    delete state.pendingVoomImage;
+    document.getElementById('voomImagePreview').innerHTML = 'No image selected';
+    return;
+  }
+  state.pendingVoomImage = trimmed;
+  document.getElementById('voomImagePreview').innerHTML = `<img src="${escHtml(trimmed)}" alt="Preview">`;
+}
+
+function buildAutoVoomComments() {
+  return state.characters.slice(0, 3).map((char, index) => ({
+    authorId: char.id,
+    authorName: char.name,
+    text: [
+      'This is so cute, I had to stop scrolling.',
+      'You look good here. I was hoping you would post today.',
+      'Now I want the full story behind this photo.'
+    ][index % 3],
+  }));
+}
+
+function saveVoomPost() {
+  const caption = document.getElementById('voomCaption').value.trim();
+  const image = state.pendingVoomImage || document.getElementById('voomImageUrl').value.trim();
+  if (!caption && !image) {
+    showToast('Add a caption or image first');
+    return;
+  }
+
+  state.voomPosts.push({
+    id: uuid(),
+    authorType: 'user',
+    authorName: state.persona.userAlias || state.settings.userName || 'You',
+    avatar: '😊',
+    caption,
+    image: image || '',
+    likes: Math.max(state.characters.length, 1) + 1,
+    comments: buildAutoVoomComments(),
+    ts: Date.now(),
+  });
+  saveState();
+  closeVoomComposer();
+  state.lineTab = 'voom';
+  renderLINEHome();
+  showToast('Posted to VOOM');
+}
+
 // ============================================================
 // World Book
 // ============================================================
@@ -1140,6 +1382,22 @@ function seedIfEmpty() {
         'You are Aria, a warm, witty, and thoughtful AI companion. ' +
         'You speak in a friendly, conversational tone and love exploring ideas. ' +
         'Keep responses concise and natural, like a real text message.',
+    });
+    saveState();
+  }
+  if (!state.voomPosts.length) {
+    state.voomPosts.push({
+      id: uuid(),
+      authorType: 'assistant',
+      authorName: 'Aria',
+      avatar: '🌸',
+      caption: 'The sky looked too soft tonight not to post.',
+      image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
+      likes: 12,
+      comments: [
+        { authorId: 'user', authorName: state.persona.userAlias || state.settings.userName || 'You', text: 'This feels like a movie frame.' }
+      ],
+      ts: Date.now() - 7200000,
     });
     saveState();
   }

@@ -173,19 +173,48 @@
       <!-- LINE Chat List -->
       <div class="line-home" id="lineHome">
         <div class="line-list-header">
-          <span class="line-list-title">Message</span>
-          <button class="line-list-compose" onclick="openNewChatSheet()">
+          <span class="line-list-title" id="lineListTitle">Chats</span>
+          <button class="line-list-compose" id="linePrimaryActionBtn" onclick="openLinePrimaryAction()">
             <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </button>
         </div>
-        <div class="line-search-bar">
+        <div class="line-search-bar" id="lineSearchBar">
           <span>🔍</span>
-          <input type="text" placeholder="Search" oninput="filterLineConvs(this.value)">
+          <input type="text" id="lineSearchInput" placeholder="Search" oninput="handleLineSearch(this.value)">
         </div>
-        <div class="line-conv-list" id="lineConvList"></div>
+        <div class="line-panel line-panel-active" id="lineChatsPanel">
+          <div class="line-conv-list" id="lineConvList"></div>
+        </div>
+        <div class="line-panel" id="lineVoomPanel">
+          <div class="line-voom-feed" id="lineVoomFeed"></div>
+        </div>
+        <div class="line-panel" id="lineContactsPanel">
+          <div class="line-contacts-pane" id="lineContactsPane"></div>
+        </div>
+        <div class="line-panel" id="lineProfilePanel">
+          <div class="line-profile-pane" id="lineProfilePane"></div>
+        </div>
+        <div class="line-tabbar">
+          <button class="line-tab active" id="lineTabChats" onclick="setLineTab('chats')">
+            <span class="line-tab-icon">💬</span>
+            <span class="line-tab-label">Chats</span>
+          </button>
+          <button class="line-tab" id="lineTabVoom" onclick="setLineTab('voom')">
+            <span class="line-tab-icon">🟢</span>
+            <span class="line-tab-label">VOOM</span>
+          </button>
+          <button class="line-tab" id="lineTabContacts" onclick="setLineTab('contacts')">
+            <span class="line-tab-icon">👥</span>
+            <span class="line-tab-label">Contacts</span>
+          </button>
+          <button class="line-tab" id="lineTabProfile" onclick="setLineTab('profile')">
+            <span class="line-tab-icon">🙂</span>
+            <span class="line-tab-label">Profile</span>
+          </button>
+        </div>
         <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
       </div>
 
@@ -524,6 +553,33 @@
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
+
+    <input type="file" id="voomImageInput" accept="image/*" style="display:none" onchange="handleVoomImageChange(event)">
+
+    <div class="modal-overlay" id="voomModal" onclick="closeVoomComposer(event)">
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">Create VOOM Post</div>
+        <div class="form-section">
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Caption</span>
+            <textarea class="form-textarea" id="voomCaption" placeholder="Say something..." rows="3"></textarea>
+          </div>
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Image</span>
+            <div class="voom-upload-actions">
+              <button class="btn btn-secondary" type="button" onclick="document.getElementById('voomImageInput').click()">Choose Image</button>
+              <input class="form-input" id="voomImageUrl" type="url" placeholder="or paste image URL" oninput="previewVoomImageUrl(this.value)">
+            </div>
+            <div class="voom-image-preview" id="voomImagePreview">No image selected</div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="closeVoomComposer()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveVoomPost()">Post</button>
+        </div>
+      </div>
+    </div>
 
   </div><!-- /iphone-screen -->
 </div><!-- /iphone -->
