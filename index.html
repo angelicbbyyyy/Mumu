@@ -328,7 +328,15 @@
 
         <div class="settings-section-label">Your Cards</div>
         <div class="wallet-card-section">
-          <div class="wallet-card-deck" id="walletCardList"></div>
+          <div class="wallet-card-stage">
+            <button class="wallet-card-nav wallet-card-nav-prev" type="button" aria-label="Previous card" onclick="stepWalletCards(-1)">
+              <svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
+            </button>
+            <div class="wallet-card-deck" id="walletCardList"></div>
+            <button class="wallet-card-nav wallet-card-nav-next" type="button" aria-label="Next card" onclick="stepWalletCards(1)">
+              <svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="2 1 11 10 2 19"/></svg>
+            </button>
+          </div>
           <div class="wallet-card-dots" id="walletCardDots"></div>
         </div>
 
@@ -354,6 +362,10 @@
         <div class="settings-section-label">Add Money</div>
         <div class="form-section">
           <div class="form-row">
+            <span class="form-label">To Card</span>
+            <select class="settings-select" id="walletFundCard"></select>
+          </div>
+          <div class="form-row">
             <span class="form-label">Amount</span>
             <input class="form-input" id="walletFundAmount" type="number" min="1" step="1" placeholder="25">
           </div>
@@ -364,6 +376,10 @@
 
         <div class="settings-section-label">Send Money</div>
         <div class="form-section">
+          <div class="form-row">
+            <span class="form-label">From Card</span>
+            <select class="settings-select" id="walletTransferCard"></select>
+          </div>
           <div class="form-row">
             <span class="form-label">Character</span>
             <select class="settings-select" id="walletTransferCharacter"></select>

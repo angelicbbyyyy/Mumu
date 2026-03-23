@@ -36,6 +36,7 @@ const state = {
   wallet: {
     balance: 120,
     cards: [],
+    activeCardId: '',
     characterBalances: {},
     transactions: [],
   },
@@ -116,6 +117,7 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_WALLET = {
   balance: 120,
   cards: [],
+  activeCardId: '',
   characterBalances: {},
   transactions: [],
 };
@@ -203,6 +205,7 @@ function normalizeWallet(raw = {}) {
     label: card.label || 'Card',
     network: card.network || 'Visa',
     last4: String(card.last4 || '').slice(-4) || '0000',
+    balance: Number(card.balance) || 0,
   })) : [];
   const cards = rawCards.filter(card => !isStarterWalletCard(card));
   const rawTransactions = Array.isArray(raw.transactions) ? raw.transactions.map(tx => ({
@@ -218,6 +221,7 @@ function normalizeWallet(raw = {}) {
   return {
     balance: Number(raw.balance) || 0,
     cards,
+    activeCardId: cards.some(card => card.id === raw.activeCardId) ? raw.activeCardId : (cards[0]?.id || ''),
     characterBalances: raw.characterBalances && typeof raw.characterBalances === 'object' ? raw.characterBalances : {},
     transactions,
   };
@@ -238,6 +242,42 @@ function getWalletCardTheme(card, index) {
   return WALLET_CARD_THEMES[key % WALLET_CARD_THEMES.length];
 }
 
+function getWalletUserBalance() {
+  const cardTotal = state.wallet.cards.reduce((sum, card) => sum + (Number(card.balance) || 0), 0);
+  return cardTotal + (Number(state.wallet.balance) || 0);
+}
+
+function getWalletActiveCardIndex() {
+  const idx = state.wallet.cards.findIndex(card => card.id === state.wallet.activeCardId);
+  return idx >= 0 ? idx : 0;
+}
+
+function setWalletActiveCard(cardId, { scroll = false } = {}) {
+  if (!state.wallet.cards.length) {
+    state.wallet.activeCardId = '';
+    return;
+  }
+  state.wallet.activeCardId = state.wallet.cards.some(card => card.id === cardId)
+    ? cardId
+    : state.wallet.cards[0].id;
+
+  const fundSelect = document.getElementById('walletFundCard');
+  if (fundSelect) fundSelect.value = state.wallet.activeCardId;
+  const transferSelect = document.getElementById('walletTransferCard');
+  if (transferSelect) transferSelect.value = state.wallet.activeCardId;
+
+  renderWalletCardDots(state.wallet.cards.length, getWalletActiveCardIndex());
+  saveState();
+
+  if (scroll) {
+    requestAnimationFrame(() => {
+      const deck = document.getElementById('walletCardList');
+      const activeCard = deck?.querySelector(`[data-card-id="${CSS.escape(state.wallet.activeCardId)}"]`);
+      activeCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    });
+  }
+}
+
 function renderWalletCardDots(count, activeIndex = 0) {
   const dots = document.getElementById('walletCardDots');
   if (!dots) return;
@@ -246,18 +286,25 @@ function renderWalletCardDots(count, activeIndex = 0) {
     return;
   }
   dots.innerHTML = Array.from({ length: count }, (_, index) => `
-    <span class="wallet-card-dot ${index === activeIndex ? 'active' : ''}"></span>
+    <button class="wallet-card-dot ${index === activeIndex ? 'active' : ''}" type="button" aria-label="Go to card ${index + 1}" onclick="setWalletActiveCard('${state.wallet.cards[index].id}', { scroll: true })"></button>
   `).join('');
 }
 
 function syncWalletCardDots() {
   const deck = document.getElementById('walletCardList');
-  if (!deck || !deck.children.length) return;
+  if (!deck || !state.wallet.cards.length) return;
   const firstCard = deck.querySelector('.wallet-card, .wallet-card-empty');
   if (!firstCard) return;
   const cardWidth = firstCard.getBoundingClientRect().width + 14;
   const activeIndex = Math.max(0, Math.min(deck.children.length - 1, Math.round(deck.scrollLeft / Math.max(cardWidth, 1))));
-  renderWalletCardDots(deck.children.length, activeIndex);
+  setWalletActiveCard(state.wallet.cards[activeIndex]?.id || state.wallet.cards[0].id);
+}
+
+function stepWalletCards(direction) {
+  if (!state.wallet.cards.length) return;
+  const currentIndex = getWalletActiveCardIndex();
+  const nextIndex = Math.max(0, Math.min(state.wallet.cards.length - 1, currentIndex + direction));
+  setWalletActiveCard(state.wallet.cards[nextIndex].id, { scroll: true });
 }
 
 function trimTrailingSlash(str) {
@@ -1414,7 +1461,7 @@ function renderWallet() {
   state.characters.forEach(char => ensureWalletCharacterBalance(char.id));
 
   const balanceEl = document.getElementById('walletBalanceDisplay');
-  if (balanceEl) balanceEl.textContent = formatCurrency(state.wallet.balance);
+  if (balanceEl) balanceEl.textContent = formatCurrency(getWalletUserBalance());
   const balanceMetaEl = document.getElementById('walletBalanceMeta');
   if (balanceMetaEl) {
     balanceMetaEl.textContent = `${state.wallet.cards.length} card${state.wallet.cards.length === 1 ? '' : 's'} in Wallet • ${state.characters.length} character${state.characters.length === 1 ? '' : 's'} available`;
@@ -1430,25 +1477,50 @@ function renderWallet() {
         </div>
       `;
     } else {
+      if (!state.wallet.cards.some(card => card.id === state.wallet.activeCardId)) {
+        state.wallet.activeCardId = state.wallet.cards[0].id;
+      }
       cardList.innerHTML = state.wallet.cards.map((card, index) => `
-        <div class="wallet-card" style="background:${escHtml(getWalletCardTheme(card, index))};">
+        <button class="wallet-card ${card.id === state.wallet.activeCardId ? 'is-active' : ''}" type="button" data-card-id="${escHtml(card.id)}" onclick="setWalletActiveCard('${escHtml(card.id)}')" style="background:${escHtml(getWalletCardTheme(card, index))};">
           <div class="wallet-card-brand">
             <span>${escHtml(card.label)}</span>
             <span class="wallet-card-chip"></span>
+          </div>
+          <div>
+            <div class="wallet-card-balance-label">Card Balance</div>
+            <div class="wallet-card-balance">${formatCurrency(card.balance)}</div>
           </div>
           <div class="wallet-card-number">•••• ${escHtml(card.last4)}</div>
           <div class="wallet-card-footer">
             <div>
               <div class="wallet-card-label">${escHtml(card.label)}</div>
-              <div class="wallet-card-meta">Available in your Wallet</div>
+              <div class="wallet-card-meta">${escHtml(card.network)} ending in ${escHtml(card.last4)}</div>
             </div>
             <div class="wallet-card-network">${escHtml(card.network)}</div>
           </div>
-        </div>
+        </button>
       `).join('');
     }
     cardList.onscroll = syncWalletCardDots;
-    renderWalletCardDots(cardList.children.length, 0);
+    renderWalletCardDots(state.wallet.cards.length, getWalletActiveCardIndex());
+  }
+
+  const fundCardSelect = document.getElementById('walletFundCard');
+  if (fundCardSelect) {
+    fundCardSelect.innerHTML = state.wallet.cards.length
+      ? state.wallet.cards.map(card => `<option value="${escHtml(card.id)}">${escHtml(card.label)} •••• ${escHtml(card.last4)}</option>`).join('')
+      : '<option value="">No cards</option>';
+    fundCardSelect.value = state.wallet.activeCardId || state.wallet.cards[0]?.id || '';
+    fundCardSelect.onchange = () => setWalletActiveCard(fundCardSelect.value);
+  }
+
+  const transferCardSelect = document.getElementById('walletTransferCard');
+  if (transferCardSelect) {
+    transferCardSelect.innerHTML = state.wallet.cards.length
+      ? state.wallet.cards.map(card => `<option value="${escHtml(card.id)}">${escHtml(card.label)} •••• ${escHtml(card.last4)}</option>`).join('')
+      : '<option value="">No cards</option>';
+    transferCardSelect.value = state.wallet.activeCardId || state.wallet.cards[0]?.id || '';
+    transferCardSelect.onchange = () => setWalletActiveCard(transferCardSelect.value);
   }
 
   const charSelect = document.getElementById('walletTransferCharacter');
@@ -1484,7 +1556,11 @@ function addWalletCard() {
     return;
   }
 
-  state.wallet.cards.push({ id: uuid(), label, network, last4 });
+  const cardId = uuid();
+  const migratedBalance = !state.wallet.cards.length && state.wallet.balance > 0 ? state.wallet.balance : 0;
+  state.wallet.cards.push({ id: cardId, label, network, last4, balance: migratedBalance });
+  if (migratedBalance > 0) state.wallet.balance = 0;
+  state.wallet.activeCardId = cardId;
   document.getElementById('walletCardLabel').value = '';
   document.getElementById('walletCardNetwork').value = '';
   document.getElementById('walletCardLast4').value = '';
@@ -1494,13 +1570,24 @@ function addWalletCard() {
 }
 
 function addWalletFunds() {
+  const cardId = document.getElementById('walletFundCard')?.value;
   const amount = Number(document.getElementById('walletFundAmount')?.value || 0);
+  if (!cardId) {
+    showToast('Add a card first');
+    return;
+  }
   if (amount <= 0) {
     showToast('Enter a fund amount');
     return;
   }
-  state.wallet.balance += amount;
-  state.wallet.transactions.unshift({ id: uuid(), type: 'fund', amount, ts: Date.now(), note: 'Added funds' });
+  const card = state.wallet.cards.find(entry => entry.id === cardId);
+  if (!card) {
+    showToast('Choose a valid card');
+    return;
+  }
+  card.balance += amount;
+  state.wallet.activeCardId = cardId;
+  state.wallet.transactions.unshift({ id: uuid(), type: 'fund', amount, ts: Date.now(), note: `Added funds to ${card.label}` });
   document.getElementById('walletFundAmount').value = '';
   saveState();
   renderWallet();
@@ -1508,8 +1595,13 @@ function addWalletFunds() {
 }
 
 function sendWalletFunds() {
+  const cardId = document.getElementById('walletTransferCard')?.value;
   const charId = document.getElementById('walletTransferCharacter')?.value;
   const amount = Number(document.getElementById('walletTransferAmount')?.value || 0);
+  if (!cardId) {
+    showToast('Choose a card');
+    return;
+  }
   if (!charId) {
     showToast('Choose a character');
     return;
@@ -1518,15 +1610,21 @@ function sendWalletFunds() {
     showToast('Enter an amount');
     return;
   }
-  if (state.wallet.balance < amount) {
-    showToast('Not enough balance');
+  const card = state.wallet.cards.find(entry => entry.id === cardId);
+  if (!card) {
+    showToast('Choose a valid card');
+    return;
+  }
+  if (card.balance < amount) {
+    showToast('Not enough money on this card');
     return;
   }
 
   ensureWalletCharacterBalance(charId);
-  state.wallet.balance -= amount;
+  card.balance -= amount;
+  state.wallet.activeCardId = cardId;
   state.wallet.characterBalances[charId] += amount;
-  state.wallet.transactions.unshift({ id: uuid(), type: 'transfer', amount, charId, ts: Date.now(), note: 'Sent to character' });
+  state.wallet.transactions.unshift({ id: uuid(), type: 'transfer', amount, charId, ts: Date.now(), note: `Sent from ${card.label}` });
   document.getElementById('walletTransferAmount').value = '';
   saveState();
   renderWallet();
