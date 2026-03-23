@@ -88,6 +88,66 @@ const WALLPAPERS = [
   { label: 'Sakura',  value: 'linear-gradient(160deg, #ffecd2 0%, #fcb69f 50%, #f8b4c8 100%)' },
 ];
 
+const DEFAULT_PERSONA = {
+  userAlias: 'You',
+  coreVibe: 'Soft, intimate, and immersive',
+  globalRules: 'Stay in character. Keep replies natural and emotionally coherent. Do not break immersion unless the user explicitly asks.',
+  styleGuide: 'Write like a real chat message, not an essay. Prefer warmth, specificity, and momentum.',
+  scenario: '',
+  boundaries: '',
+};
+
+const DEFAULT_SETTINGS = {
+  provider: 'anthropic',
+  baseUrl: '',
+  apiKey: '',
+  model: 'claude-sonnet-4-6',
+  userName: 'You',
+  memoryNote: '',
+};
+
+function parseTagList(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map(tag => String(tag).trim()).filter(Boolean);
+  }
+  return String(raw || '')
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(Boolean);
+}
+
+function stringifyTagList(tags) {
+  return parseTagList(tags).join(', ');
+}
+
+function normalizeCharacter(raw = {}) {
+  return {
+    id: raw.id || uuid(),
+    avatar: raw.avatar || '🤖',
+    name: raw.name || 'Untitled',
+    description: raw.description || '',
+    nickname: raw.nickname || '',
+    relationship: raw.relationship || '',
+    tags: parseTagList(raw.tags),
+    modelOverride: raw.modelOverride || '',
+    scenario: raw.scenario || '',
+    systemPrompt: raw.systemPrompt || '',
+    privateNotes: raw.privateNotes || '',
+  };
+}
+
+function normalizeWorldBookEntry(raw = {}) {
+  return {
+    id: raw.id || uuid(),
+    title: raw.title || 'New Entry',
+    content: raw.content || '',
+    keywords: parseTagList(raw.keywords),
+    priority: Number.isFinite(Number(raw.priority)) ? Number(raw.priority) : 50,
+    scope: raw.scope === 'always' ? 'always' : 'conditional',
+    enabled: raw.enabled !== false,
+  };
+}
+
 function trimTrailingSlash(str) {
   return (str || '').replace(/\/+$/, '');
 }
@@ -205,12 +265,12 @@ function loadState() {
     const raw = localStorage.getItem('mumu_v2');
     if (!raw) return;
     const s = JSON.parse(raw);
-    if (s.characters)    state.characters    = s.characters;
+    if (s.characters)    state.characters    = s.characters.map(normalizeCharacter);
     if (s.conversations) state.conversations = s.conversations;
-    if (s.worldBook)     state.worldBook     = s.worldBook;
+    if (s.worldBook)     state.worldBook     = s.worldBook.map(normalizeWorldBookEntry);
     if (s.voomPosts)     state.voomPosts     = s.voomPosts;
-    if (s.persona)       Object.assign(state.persona, s.persona);
-    if (s.settings)      Object.assign(state.settings, s.settings);
+    if (s.persona)       Object.assign(state.persona, DEFAULT_PERSONA, s.persona);
+    if (s.settings)      Object.assign(state.settings, DEFAULT_SETTINGS, s.settings);
     if (s.wallpaper)     state.wallpaper     = s.wallpaper;
   } catch (e) { console.warn('loadState failed', e); }
 }
@@ -745,33 +805,14 @@ async function diagnoseNetworkError() {
 }
 
 async function callAPI(charId) {
-  const char = state.characters.find(c => c.id === charId);
+  const rawChar = state.characters.find(c => c.id === charId);
+  const char = rawChar ? normalizeCharacter(rawChar) : null;
   const history = state.conversations[charId] || [];
-  const { apiKey, model } = state.settings;
+  const { apiKey } = state.settings;
+  const model = char?.modelOverride?.trim() || state.settings.model;
   const provDef = getProviderConfig();
   const baseUrl = provDef.baseUrl;
-
-  // Build system prompt
-  const worldText = state.worldBook
-    .filter(e => e.content?.trim())
-    .map(e => `[${e.title || 'World Info'}]\n${e.content}`)
-    .join('\n\n');
-
-  const parts = [];
-  parts.push([
-    '# Persona',
-    state.persona.userAlias ? `User name: ${state.persona.userAlias}` : '',
-    state.persona.coreVibe ? `Core vibe: ${state.persona.coreVibe}` : '',
-    state.persona.globalRules ? `Global rules:\n${state.persona.globalRules}` : '',
-    state.persona.styleGuide ? `Writing style:\n${state.persona.styleGuide}` : '',
-    state.persona.scenario ? `Scenario:\n${state.persona.scenario}` : '',
-    state.persona.boundaries ? `Boundaries:\n${state.persona.boundaries}` : '',
-  ].filter(Boolean).join('\n\n'));
-  if (worldText) parts.push('# World Book\n' + worldText);
-  if (char?.systemPrompt) parts.push('# Character\n' + char.systemPrompt);
-  if (state.settings.memoryNote?.trim()) parts.push('# Studio Note\n' + state.settings.memoryNote.trim());
-  if (!parts.length) parts.push('You are a helpful assistant.');
-  const systemPrompt = parts.join('\n\n---\n\n');
+  const systemPrompt = buildPromptBundle(char, history);
 
   // History for API (only role + content)
   const apiHistory = history.map(m => ({
@@ -784,6 +825,82 @@ async function callAPI(charId) {
   } else {
     return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
   }
+}
+
+function selectRelevantWorldBookEntries(history, char) {
+  const transcript = history.map(msg => msg.content || '').join('\n').toLowerCase();
+  const charText = [char?.name, char?.description, char?.relationship, ...(char?.tags || [])]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+
+  return state.worldBook
+    .map(normalizeWorldBookEntry)
+    .filter(entry => entry.enabled && entry.content.trim())
+    .filter(entry => {
+      if (entry.scope === 'always') return true;
+      if (!entry.keywords.length) return false;
+      return entry.keywords.some(keyword => {
+        const token = keyword.toLowerCase();
+        return transcript.includes(token) || charText.includes(token);
+      });
+    })
+    .sort((a, b) => b.priority - a.priority);
+}
+
+function buildPromptBundle(char, history) {
+  const personaBlock = [
+    '# Global System',
+    state.persona.globalRules ? `Core rules:\n${state.persona.globalRules}` : '',
+    state.persona.styleGuide ? `Style guide:\n${state.persona.styleGuide}` : '',
+    state.persona.boundaries ? `Boundaries:\n${state.persona.boundaries}` : '',
+    state.settings.memoryNote?.trim() ? `Studio note:\n${state.settings.memoryNote.trim()}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const personaIdentity = [
+    '# User Persona',
+    state.persona.userAlias ? `User name: ${state.persona.userAlias}` : '',
+    state.persona.coreVibe ? `Essence: ${state.persona.coreVibe}` : '',
+    state.persona.scenario ? `Shared scenario:\n${state.persona.scenario}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const worldEntries = selectRelevantWorldBookEntries(history, char);
+  const worldBlock = worldEntries.length ? [
+    '# World Book',
+    ...worldEntries.map(entry => {
+      const meta = [
+        entry.scope === 'always' ? 'always-on' : 'conditional',
+        entry.keywords.length ? `triggers: ${entry.keywords.join(', ')}` : '',
+        `priority ${entry.priority}`,
+      ].filter(Boolean).join(' • ');
+      return `[${entry.title || 'World Entry'}]\n${meta}\n${entry.content}`;
+    }),
+  ].join('\n\n') : '';
+
+  const characterBlock = char ? [
+    '# Character Card',
+    `Name: ${char.name}`,
+    char.description ? `Bio: ${char.description}` : '',
+    char.relationship ? `Relationship to user: ${char.relationship}` : '',
+    char.nickname ? `What they call the user: ${char.nickname}` : '',
+    char.tags?.length ? `Tags: ${char.tags.join(', ')}` : '',
+    char.scenario ? `Character-specific scenario:\n${char.scenario}` : '',
+    char.systemPrompt ? `Behavior prompt:\n${char.systemPrompt}` : '',
+  ].filter(Boolean).join('\n\n') : '';
+
+  const chatContext = history.length ? [
+    '# Chat Context',
+    `Recent message count: ${history.length}`,
+    `Latest speaker: ${history[history.length - 1]?.role || 'unknown'}`,
+  ].join('\n\n') : '';
+
+  return [
+    personaBlock,
+    personaIdentity,
+    worldBlock,
+    characterBlock,
+    chatContext,
+  ].filter(Boolean).join('\n\n---\n\n') || 'You are a helpful assistant.';
 }
 
 async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic) {
@@ -993,6 +1110,97 @@ function clearAllChats() {
   if (state.currentApp === 'messages') renderLINEConvList();
 }
 
+function buildStudioSnapshot() {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: {
+      characters: state.characters,
+      conversations: state.conversations,
+      worldBook: state.worldBook,
+      voomPosts: state.voomPosts,
+      persona: state.persona,
+      settings: state.settings,
+      wallpaper: state.wallpaper,
+    },
+  };
+}
+
+function exportStudioData() {
+  try {
+    const snapshot = buildStudioSnapshot();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    a.href = url;
+    a.download = `mumu-studio-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Studio data exported');
+  } catch (err) {
+    console.error('exportStudioData failed', err);
+    alert('Could not export studio data.');
+  }
+}
+
+function triggerImportStudioData() {
+  const input = document.getElementById('studioImportInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+function applyImportedStudioData(payload) {
+  const imported = payload?.data || payload;
+  if (!imported || typeof imported !== 'object') {
+    throw new Error('Invalid backup file.');
+  }
+
+  state.characters = Array.isArray(imported.characters) ? imported.characters.map(normalizeCharacter) : [];
+  state.conversations = imported.conversations && typeof imported.conversations === 'object' ? imported.conversations : {};
+  state.worldBook = Array.isArray(imported.worldBook) ? imported.worldBook.map(normalizeWorldBookEntry) : [];
+  state.voomPosts = Array.isArray(imported.voomPosts) ? imported.voomPosts : [];
+  state.persona = { ...DEFAULT_PERSONA, ...(imported.persona || {}) };
+  state.settings = { ...DEFAULT_SETTINGS, ...(imported.settings || {}) };
+  state.wallpaper = imported.wallpaper || WALLPAPERS[0].value;
+
+  state.currentApp = null;
+  state.activeChat = null;
+  state.lineTab = 'chats';
+  state.editingCharId = null;
+
+  saveState();
+  applyWallpaper(state.wallpaper);
+  renderContactsList();
+  renderLINEHome();
+  renderWorldBook();
+  renderPersona();
+  renderSettings();
+  closeLINEChat(true);
+  goHome();
+}
+
+async function handleImportStudioData(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const raw = await file.text();
+    const payload = JSON.parse(raw);
+    if (!confirm('Importing will replace the current studio data on this device. Continue?')) return;
+    applyImportedStudioData(payload);
+    showToast('Studio data imported');
+  } catch (err) {
+    console.error('handleImportStudioData failed', err);
+    alert('That file could not be imported. Make sure it is a valid Mumu studio backup JSON.');
+  } finally {
+    event.target.value = '';
+  }
+}
+
 // ============================================================
 // Contacts
 // ============================================================
@@ -1014,15 +1222,19 @@ function renderContactsList(filter = '') {
     return;
   }
 
-  container.innerHTML = chars.map(char => `
+  container.innerHTML = chars.map(rawChar => {
+    const char = normalizeCharacter(rawChar);
+    return `
     <div class="contact-item" onclick="openEditCharSheet('${char.id}')">
       <div class="contact-avatar">${escHtml(char.avatar || '🤖')}</div>
       <div class="contact-info">
         <div class="contact-name">${escHtml(char.name)}</div>
         <div class="contact-desc">${escHtml(char.description || 'No description')}</div>
         <div class="contact-tags">
-          <span class="contact-tag">${char.systemPrompt ? 'Prompt ready' : 'Needs prompt'}</span>
+          <span class="contact-tag">${char.relationship || (char.systemPrompt ? 'Prompt ready' : 'Needs prompt')}</span>
           <span class="contact-tag muted">${lastMsg(char.id) ? 'Active chat' : 'No chat yet'}</span>
+          ${char.tags?.length ? `<span class="contact-tag muted">${escHtml(char.tags.slice(0, 2).join(' • '))}</span>` : ''}
+          ${char.modelOverride ? `<span class="contact-tag muted">${escHtml(char.modelOverride)}</span>` : ''}
         </div>
       </div>
       <div class="contact-actions">
@@ -1030,7 +1242,8 @@ function renderContactsList(filter = '') {
           onclick="event.stopPropagation();chatFromContacts('${char.id}')">Chat</button>
         <span style="color:#C7C7CC;font-size:18px;">›</span>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function chatFromContacts(charId) {
@@ -1055,20 +1268,33 @@ function openAddCharSheet() {
   document.getElementById('charAvatar').value = '';
   document.getElementById('charName').value = '';
   document.getElementById('charDesc').value = '';
+  document.getElementById('charNickname').value = '';
+  document.getElementById('charRelationship').value = '';
+  document.getElementById('charTags').value = '';
+  document.getElementById('charModelOverride').value = '';
+  document.getElementById('charScenario').value = '';
   document.getElementById('charSystem').value = '';
+  document.getElementById('charPrivateNotes').value = '';
   document.getElementById('charDeleteBtn').style.display = 'none';
   document.getElementById('charModal').classList.add('open');
 }
 
 function openEditCharSheet(charId) {
-  const char = state.characters.find(c => c.id === charId);
-  if (!char) return;
+  const existingChar = state.characters.find(c => c.id === charId);
+  if (!existingChar) return;
+  const char = normalizeCharacter(existingChar);
   state.editingCharId = charId;
   document.getElementById('charModalTitle').textContent = 'Edit Character';
   document.getElementById('charAvatar').value = char.avatar || '';
   document.getElementById('charName').value = char.name || '';
   document.getElementById('charDesc').value = char.description || '';
+  document.getElementById('charNickname').value = char.nickname || '';
+  document.getElementById('charRelationship').value = char.relationship || '';
+  document.getElementById('charTags').value = stringifyTagList(char.tags);
+  document.getElementById('charModelOverride').value = char.modelOverride || '';
+  document.getElementById('charScenario').value = char.scenario || '';
   document.getElementById('charSystem').value = char.systemPrompt || '';
+  document.getElementById('charPrivateNotes').value = char.privateNotes || '';
   document.getElementById('charDeleteBtn').style.display = '';
   document.getElementById('charModal').classList.add('open');
 }
@@ -1082,15 +1308,35 @@ function saveCharacter() {
   const avatar = document.getElementById('charAvatar').value.trim() || '🤖';
   const name   = document.getElementById('charName').value.trim();
   const description = document.getElementById('charDesc').value.trim();
+  const nickname = document.getElementById('charNickname').value.trim();
+  const relationship = document.getElementById('charRelationship').value.trim();
+  const tags = parseTagList(document.getElementById('charTags').value);
+  const modelOverride = document.getElementById('charModelOverride').value.trim();
+  const scenario = document.getElementById('charScenario').value.trim();
   const systemPrompt = document.getElementById('charSystem').value.trim();
+  const privateNotes = document.getElementById('charPrivateNotes').value.trim();
 
   if (!name) { showToast('Please enter a name'); return; }
 
+  const payload = normalizeCharacter({
+    id: state.editingCharId || undefined,
+    avatar,
+    name,
+    description,
+    nickname,
+    relationship,
+    tags,
+    modelOverride,
+    scenario,
+    systemPrompt,
+    privateNotes,
+  });
+
   if (state.editingCharId) {
     const char = state.characters.find(c => c.id === state.editingCharId);
-    if (char) Object.assign(char, { avatar, name, description, systemPrompt });
+    if (char) Object.assign(char, payload);
   } else {
-    state.characters.push({ id: uuid(), avatar, name, description, systemPrompt });
+    state.characters.push(payload);
   }
 
   saveState();
@@ -1120,6 +1366,7 @@ function openNewChatSheet() {
     showToast('Add characters in Contacts first');
     goHome();
     setTimeout(() => openApp('contacts'), 450);
+    return;
   }
   // else: already on messages list, just show it
 }
@@ -1316,12 +1563,14 @@ function renderWorldBook() {
         <strong>${state.worldBook.length}</strong>
       </div>
       <div class="worldbook-summary-card">
-        <span class="worldbook-summary-label">Prompt Layer</span>
-        <strong>Global</strong>
+        <span class="worldbook-summary-label">Always On</span>
+        <strong>${state.worldBook.filter(entry => normalizeWorldBookEntry(entry).scope === 'always' && normalizeWorldBookEntry(entry).enabled).length}</strong>
       </div>
     </div>
-  ` + state.worldBook.map(entry => `
-    <div class="worldbook-entry">
+  ` + state.worldBook.map(rawEntry => {
+    const entry = normalizeWorldBookEntry(rawEntry);
+    return `
+    <div class="worldbook-entry${entry.enabled === false ? ' worldbook-entry-disabled' : ''}">
       <div class="worldbook-entry-header">
         <input
           class="worldbook-entry-title-input"
@@ -1331,6 +1580,37 @@ function renderWorldBook() {
         >
         <button class="worldbook-delete-btn" onclick="deleteWBEntry('${entry.id}')">🗑</button>
       </div>
+      <div class="worldbook-entry-meta">
+        <input
+          class="worldbook-entry-input"
+          value="${escHtml(stringifyTagList(entry.keywords))}"
+          placeholder="Keywords: school, breakup, Tokyo"
+          oninput="updateWBKeywords('${entry.id}', this.value)"
+        >
+        <select
+          class="worldbook-entry-select"
+          onchange="updateWBScope('${entry.id}', this.value)"
+        >
+          <option value="conditional" ${entry.scope === 'conditional' ? 'selected' : ''}>Conditional</option>
+          <option value="always" ${entry.scope === 'always' ? 'selected' : ''}>Always On</option>
+        </select>
+        <input
+          class="worldbook-entry-priority"
+          type="number"
+          min="0"
+          max="100"
+          value="${Number(entry.priority) || 0}"
+          onchange="updateWBPriority('${entry.id}', this.value)"
+        >
+        <label class="worldbook-toggle">
+          <input
+            type="checkbox"
+            ${entry.enabled !== false ? 'checked' : ''}
+            onchange="updateWBEnabled('${entry.id}', this.checked)"
+          >
+          <span>Enabled</span>
+        </label>
+      </div>
       <div class="worldbook-entry-body">
         <textarea
           class="worldbook-entry-textarea"
@@ -1338,11 +1618,12 @@ function renderWorldBook() {
           oninput="updateWBContent('${entry.id}', this.value)"
         >${escHtml(entry.content)}</textarea>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addWorldBookEntry() {
-  state.worldBook.push({ id: uuid(), title: 'New Entry', content: '' });
+  state.worldBook.push(normalizeWorldBookEntry({ title: 'New Entry', scope: 'conditional', priority: 50 }));
   saveState();
   renderWorldBook();
   setTimeout(() => {
@@ -1361,6 +1642,38 @@ function updateWBContent(id, val) {
   if (e) { e.content = val; saveState(); }
 }
 
+function updateWBKeywords(id, val) {
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) {
+    e.keywords = parseTagList(val);
+    saveState();
+  }
+}
+
+function updateWBScope(id, val) {
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) {
+    e.scope = val === 'always' ? 'always' : 'conditional';
+    saveState();
+  }
+}
+
+function updateWBPriority(id, val) {
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) {
+    e.priority = Math.max(0, Math.min(100, Number(val) || 0));
+    saveState();
+  }
+}
+
+function updateWBEnabled(id, checked) {
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) {
+    e.enabled = Boolean(checked);
+    saveState();
+  }
+}
+
 function deleteWBEntry(id) {
   state.worldBook = state.worldBook.filter(x => x.id !== id);
   saveState();
@@ -1373,16 +1686,27 @@ function deleteWBEntry(id) {
 
 function seedIfEmpty() {
   if (!state.characters.length) {
-    state.characters.push({
-      id: uuid(),
+    state.characters.push(normalizeCharacter({
       avatar: '🌸',
       name: 'Aria',
       description: 'A friendly and curious AI companion',
+      relationship: 'Close online friend',
+      tags: ['gentle', 'curious', 'late-night texting'],
+      scenario: 'Aria has already been chatting with the user for a while and knows the tone is cozy, intimate, and realistic.',
       systemPrompt:
         'You are Aria, a warm, witty, and thoughtful AI companion. ' +
         'You speak in a friendly, conversational tone and love exploring ideas. ' +
         'Keep responses concise and natural, like a real text message.',
-    });
+    }));
+    saveState();
+  }
+  if (!state.worldBook.length) {
+    state.worldBook.push(normalizeWorldBookEntry({
+      title: 'Phone Reality',
+      content: 'Treat the conversation like it is happening inside a real phone messaging app. Replies should feel like natural texts, not essays or stage directions.',
+      scope: 'always',
+      priority: 90,
+    }));
     saveState();
   }
   if (!state.voomPosts.length) {

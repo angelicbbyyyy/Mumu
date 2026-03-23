@@ -457,6 +457,14 @@
 
         <div class="settings-section-label">Data</div>
         <div class="settings-group">
+          <div class="settings-row" style="cursor:pointer;" onclick="exportStudioData()">
+            <div class="settings-row-icon" style="background:#e8f4fd;">💾</div>
+            <div class="settings-row-label" style="color:#007AFF;">Export Studio Data</div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;" onclick="triggerImportStudioData()">
+            <div class="settings-row-icon" style="background:#eefdf2;">📥</div>
+            <div class="settings-row-label" style="color:#007AFF;">Import Studio Data</div>
+          </div>
           <div class="settings-row" style="cursor:pointer;" onclick="clearAllChats()">
             <div class="settings-row-icon" style="background:#fff0ef;">🗑️</div>
             <div class="settings-row-label" style="color:#FF3B30;">Clear All Chat History</div>
@@ -519,9 +527,33 @@
             <span class="form-label">Description</span>
             <textarea class="form-textarea" id="charDesc" placeholder="Short description..." rows="2"></textarea>
           </div>
+          <div class="form-row">
+            <span class="form-label">Nickname</span>
+            <input class="form-input" id="charNickname" type="text" placeholder="What they call you">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Relationship</span>
+            <input class="form-input" id="charRelationship" type="text" placeholder="Friend, crush, rival...">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Tags</span>
+            <input class="form-input" id="charTags" type="text" placeholder="slow burn, flirty, fantasy">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Model Override</span>
+            <input class="form-input" id="charModelOverride" type="text" placeholder="Optional model ID">
+          </div>
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Scenario Setup</span>
+            <textarea class="form-textarea" id="charScenario" placeholder="Per-character scene setup or opening assumptions..." rows="3"></textarea>
+          </div>
           <div class="form-row form-textarea-row">
             <span class="form-label">Persona / System Prompt</span>
             <textarea class="form-textarea" id="charSystem" placeholder="You are [name], a..." rows="4"></textarea>
+          </div>
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Private Notes</span>
+            <textarea class="form-textarea" id="charPrivateNotes" placeholder="Private notes for you only. Not sent to the AI." rows="3"></textarea>
           </div>
         </div>
 
@@ -537,6 +569,7 @@
     <div class="toast" id="toast"></div>
 
     <input type="file" id="voomImageInput" accept="image/*" style="display:none" onchange="handleVoomImageChange(event)">
+    <input type="file" id="studioImportInput" accept="application/json,.json" style="display:none" onchange="handleImportStudioData(event)">
 
     <div class="modal-overlay" id="voomModal" onclick="closeVoomComposer(event)">
       <div class="modal-sheet">
