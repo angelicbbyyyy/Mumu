@@ -33,6 +33,7 @@ const state = {
     customAuth: 'bearer',
     customChatPath: '/chat/completions',
     customModelsPath: '/models',
+    connectionMode: 'auto',
   },
   wallpaper: null,             // CSS background value
   editingCharId: null,
@@ -123,6 +124,45 @@ function buildAuthHeaders(authMode, apiKey) {
   if (!apiKey || authMode === 'none') return {};
   if (authMode === 'x-api-key') return { 'x-api-key': apiKey };
   return { 'Authorization': `Bearer ${apiKey}` };
+}
+
+function getProxyEndpoint() {
+  if (/netlify\.app$/i.test(location.hostname) || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    return '/.netlify/functions/api';
+  }
+  return '';
+}
+
+function shouldUseProxy(provDef) {
+  const mode = state.settings.connectionMode || 'auto';
+  if (mode === 'direct') return false;
+  if (mode === 'proxy') return Boolean(getProxyEndpoint());
+  return Boolean(getProxyEndpoint()) && (state.settings.provider === 'custom');
+}
+
+async function proxyFetch(url, options = {}) {
+  const endpoint = getProxyEndpoint();
+  if (!endpoint) throw new TypeError('Proxy endpoint unavailable on this host.');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url,
+      method: options.method || 'POST',
+      headers: options.headers || {},
+      body: options.body ? JSON.parse(options.body) : null,
+    }),
+  });
+
+  return response;
+}
+
+async function requestJson(url, options, provDef) {
+  const response = shouldUseProxy(provDef)
+    ? await proxyFetch(url, options)
+    : await fetch(url, options);
+  return response;
 }
 
 // ============================================================
@@ -596,6 +636,10 @@ async function diagnoseNetworkError() {
   const provDef = getProviderConfig();
   const testUrl = joinUrl(provDef.baseUrl, provDef.chatPath || '');
 
+  if (provider === 'custom' && state.settings.connectionMode === 'proxy' && !getProxyEndpoint()) {
+    return `Proxy mode is enabled, but this site is running on ${location.origin} and does not have a proxy endpoint.\n\nFor providers like NVIDIA that block direct browser calls, deploy this app on Netlify so /.netlify/functions/api is available.`;
+  }
+
   try {
     const resp = await fetch(testUrl, {
       method: 'OPTIONS',
@@ -657,7 +701,8 @@ async function callAPI(charId) {
 }
 
 async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic) {
-  const resp = await fetch(joinUrl(baseUrl, provDef.chatPath || '/v1/messages'), {
+  const url = joinUrl(baseUrl, provDef.chatPath || '/v1/messages');
+  const resp = await requestJson(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -666,7 +711,7 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef =
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({ model, max_tokens: 1024, system, messages }),
-  });
+  }, provDef);
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
     throw new Error(e?.error?.message || `HTTP ${resp.status}`);
@@ -681,14 +726,14 @@ async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDe
     { role: 'system', content: system },
     ...messages,
   ];
-  const resp = await fetch(url, {
+  const resp = await requestJson(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...buildAuthHeaders(provDef.auth || 'bearer', apiKey),
     },
     body: JSON.stringify({ model, max_tokens: 1024, messages: openAIMessages }),
-  });
+  }, provDef);
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
     throw new Error(e?.error?.message || `HTTP ${resp.status}`);
@@ -714,20 +759,22 @@ async function fetchModels() {
   try {
     let models = [];
     if (provDef.format === 'anthropic') {
-      const resp = await fetch(joinUrl(baseUrl, provDef.modelsPath || '/v1/models'), {
+      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/v1/models'), {
+        method: 'GET',
         headers: {
           ...buildAuthHeaders(provDef.auth || 'x-api-key', apiKey),
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
-      });
+      }, provDef);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       models = (data.data || []).map(m => m.id);
     } else {
-      const resp = await fetch(joinUrl(baseUrl, provDef.modelsPath || '/models'), {
+      const resp = await requestJson(joinUrl(baseUrl, provDef.modelsPath || '/models'), {
+        method: 'GET',
         headers: buildAuthHeaders(provDef.auth || 'bearer', apiKey),
-      });
+      }, provDef);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       models = (data.data || []).map(m => m.id).sort();
@@ -764,6 +811,8 @@ function renderSettings() {
   if (provEl) provEl.value = s.provider || 'anthropic';
   document.getElementById('settingsApiKey').value = s.apiKey || '';
   document.getElementById('settingsUserName').value = s.userName || '';
+  const connectionEl = document.getElementById('settingsConnectionMode');
+  if (connectionEl) connectionEl.value = s.connectionMode || 'auto';
   const customModelEl = document.getElementById('settingsCustomModel');
   if (customModelEl) customModelEl.value = s.model || '';
   const formatEl = document.getElementById('settingsCustomFormat');
@@ -837,6 +886,7 @@ function saveSettings() {
     : (document.getElementById('settingsModel')?.value || state.settings.model);
   state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
   state.settings.memoryNote = document.getElementById('settingsMemoryNote')?.value?.trim() || '';
+  state.settings.connectionMode = document.getElementById('settingsConnectionMode')?.value || state.settings.connectionMode;
   state.settings.customFormat = document.getElementById('settingsCustomFormat')?.value || state.settings.customFormat;
   state.settings.customAuth = document.getElementById('settingsCustomAuth')?.value || state.settings.customAuth;
   state.settings.customChatPath = document.getElementById('settingsCustomChatPath')?.value?.trim() || '/chat/completions';

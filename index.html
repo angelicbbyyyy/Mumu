@@ -400,6 +400,15 @@
 
         <div class="settings-group" id="customProviderGroup" style="display:none;">
           <div class="settings-row">
+            <div class="settings-row-icon" style="background:#eef7ff;">🌉</div>
+            <div class="settings-row-label">Connection</div>
+            <select class="settings-select" id="settingsConnectionMode" onchange="saveSettings()">
+              <option value="auto">Auto</option>
+              <option value="proxy">Proxy</option>
+              <option value="direct">Direct</option>
+            </select>
+          </div>
+          <div class="settings-row">
             <div class="settings-row-icon" style="background:#eef2ff;">🧩</div>
             <div class="settings-row-label">Format</div>
             <select class="settings-select" id="settingsCustomFormat" onchange="saveSettings()">
