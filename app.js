@@ -1,5 +1,5 @@
 /* ============================================================
-   iPhone Chatbot Simulator — App Logic
+   iPhone Chatbot Simulator — App Logic v2
    ============================================================ */
 
 'use strict';
@@ -9,18 +9,73 @@
 // ============================================================
 
 const state = {
-  activeTab: 'messages',
-  activeChat: null,          // character id currently open, or null
-  characters: [],            // array of character objects
-  conversations: {},         // { charId: [{role, content, ts}] }
-  worldBook: [],             // array of { id, title, content }
+  currentApp: null,            // 'messages' | 'contacts' | 'worldbook' | 'settings' | null
+  activeChat: null,            // character id currently open in LINE chat
+  characters: [],
+  conversations: {},           // { charId: [{role, content, ts, read}] }
+  worldBook: [],
   settings: {
+    provider: 'anthropic',     // 'anthropic' | 'openai' | 'groq' | 'custom'
+    baseUrl: '',               // only used for 'custom'
     apiKey: '',
     model: 'claude-sonnet-4-6',
     userName: 'You',
   },
-  editingCharId: null,       // id of character being edited in modal
+  wallpaper: null,             // CSS background value
+  editingCharId: null,
 };
+
+// ============================================================
+// Provider Definitions
+// ============================================================
+
+const PROVIDERS = {
+  anthropic: {
+    label: 'Claude (Anthropic)',
+    baseUrl: 'https://api.anthropic.com',
+    chatPath: '/v1/messages',
+    modelsPath: '/v1/models',
+    format: 'anthropic',
+    defaultModels: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'],
+  },
+  openai: {
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    chatPath: '/chat/completions',
+    modelsPath: '/models',
+    format: 'openai',
+    defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+  },
+  groq: {
+    label: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    chatPath: '/chat/completions',
+    modelsPath: '/models',
+    format: 'openai',
+    defaultModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+  },
+  custom: {
+    label: 'Custom',
+    baseUrl: '',
+    chatPath: '/chat/completions',
+    modelsPath: '/models',
+    format: 'openai',
+    defaultModels: [],
+  },
+};
+
+// ============================================================
+// Wallpaper Presets
+// ============================================================
+
+const WALLPAPERS = [
+  { label: 'Night',   value: 'linear-gradient(160deg, #1a1a3e 0%, #2d1b4e 40%, #1a2e4a 100%)' },
+  { label: 'Pink',    value: 'linear-gradient(160deg, #f8b4c8 0%, #fce4ec 50%, #e8b4d0 100%)' },
+  { label: 'Ocean',   value: 'linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)' },
+  { label: 'Sunset',  value: 'linear-gradient(160deg, #f7971e 0%, #ffd200 50%, #f7971e 100%)' },
+  { label: 'Forest',  value: 'linear-gradient(160deg, #134e5e 0%, #71b280 100%)' },
+  { label: 'Sakura',  value: 'linear-gradient(160deg, #ffecd2 0%, #fcb69f 50%, #f8b4c8 100%)' },
+];
 
 // ============================================================
 // Persistence
@@ -28,29 +83,27 @@ const state = {
 
 function saveState() {
   try {
-    localStorage.setItem('mumu_state', JSON.stringify({
+    localStorage.setItem('mumu_v2', JSON.stringify({
       characters: state.characters,
       conversations: state.conversations,
       worldBook: state.worldBook,
       settings: state.settings,
+      wallpaper: state.wallpaper,
     }));
-  } catch (e) {
-    console.warn('Failed to save state', e);
-  }
+  } catch (e) { console.warn('saveState failed', e); }
 }
 
 function loadState() {
   try {
-    const raw = localStorage.getItem('mumu_state');
+    const raw = localStorage.getItem('mumu_v2');
     if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (saved.characters)    state.characters    = saved.characters;
-    if (saved.conversations) state.conversations = saved.conversations;
-    if (saved.worldBook)     state.worldBook     = saved.worldBook;
-    if (saved.settings)      Object.assign(state.settings, saved.settings);
-  } catch (e) {
-    console.warn('Failed to load state', e);
-  }
+    const s = JSON.parse(raw);
+    if (s.characters)    state.characters    = s.characters;
+    if (s.conversations) state.conversations = s.conversations;
+    if (s.worldBook)     state.worldBook     = s.worldBook;
+    if (s.settings)      Object.assign(state.settings, s.settings);
+    if (s.wallpaper)     state.wallpaper     = s.wallpaper;
+  } catch (e) { console.warn('loadState failed', e); }
 }
 
 // ============================================================
@@ -61,200 +114,28 @@ function uuid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-function formatTime(ts) {
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatShortTime(ts) {
   const d = new Date(ts);
   const now = new Date();
   const diffDays = Math.floor((now - d) / 86400000);
   if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  if (diffDays < 7)  return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
-}
-
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 80) + 'px';
-}
-
-// ============================================================
-// Status Bar Clock
-// ============================================================
-
-function updateClock() {
-  const now = new Date();
-  document.getElementById('statusTime').textContent =
-    now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-// ============================================================
-// Tab Navigation
-// ============================================================
-
-function switchTab(tab) {
-  if (state.activeTab === tab) return;
-
-  // Deactivate old tab item
-  document.getElementById('tab-' + state.activeTab)?.classList.remove('active');
-  document.getElementById('view-' + state.activeTab)?.classList.remove('active');
-
-  state.activeTab = tab;
-
-  document.getElementById('tab-' + tab).classList.add('active');
-  const view = document.getElementById('view-' + tab);
-  view.classList.add('active');
-
-  // Refresh relevant section
-  if (tab === 'messages') renderConversationList();
-  if (tab === 'contacts') renderContactsList();
-  if (tab === 'worldbook') renderWorldBook();
-  if (tab === 'settings') renderSettings();
-}
-
-// ============================================================
-// MESSAGES — Conversation List
-// ============================================================
-
-function renderConversationList(filter = '') {
-  const container = document.getElementById('conversationList');
-  const chars = state.characters.filter(c =>
-    !filter || c.name.toLowerCase().includes(filter.toLowerCase())
-  );
-
-  if (chars.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">💬</div>
-        <div class="empty-state-title">No conversations yet</div>
-        <div class="empty-state-subtitle">
-          Add a character in <strong>Contacts</strong>, then start chatting.
-        </div>
-      </div>`;
-    return;
-  }
-
-  // Sort by last message timestamp descending
-  const sorted = [...chars].sort((a, b) => {
-    const aMsg = lastMsg(a.id);
-    const bMsg = lastMsg(b.id);
-    return (bMsg?.ts || 0) - (aMsg?.ts || 0);
-  });
-
-  container.innerHTML = sorted.map(char => {
-    const last = lastMsg(char.id);
-    const preview = last
-      ? (last.role === 'user' ? 'You: ' : '') + last.content.slice(0, 60)
-      : 'No messages yet';
-    const timeStr = last ? formatTime(last.ts) : '';
-    return `
-      <div class="conv-item" onclick="openChat('${char.id}')">
-        <div class="conv-avatar">${char.avatar || '🤖'}</div>
-        <div class="conv-info">
-          <div class="conv-header">
-            <span class="conv-name">${escHtml(char.name)}</span>
-            <span class="conv-time">${timeStr}</span>
-          </div>
-          <div class="conv-preview">${escHtml(preview)}</div>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function lastMsg(charId) {
-  const msgs = state.conversations[charId];
-  return msgs && msgs.length ? msgs[msgs.length - 1] : null;
-}
-
-function filterConversations(val) {
-  renderConversationList(val);
-}
-
-// ============================================================
-// MESSAGES — Chat View
-// ============================================================
-
-function openChat(charId) {
-  const char = state.characters.find(c => c.id === charId);
-  if (!char) return;
-
-  state.activeChat = charId;
-
-  // Update chat header
-  document.getElementById('chatNavAvatar').textContent = char.avatar || '🤖';
-  document.getElementById('chatNavName').textContent = char.name;
-
-  // Show chat view
-  const chatView = document.getElementById('chatView');
-  chatView.classList.add('open');
-
-  // Render messages
-  renderMessages();
-
-  // Focus input
-  setTimeout(() => {
-    document.getElementById('chatInput').focus();
-  }, 300);
-}
-
-function closeChat() {
-  state.activeChat = null;
-  document.getElementById('chatView').classList.remove('open');
-  document.getElementById('chatInput').value = '';
-  document.getElementById('chatInput').style.height = 'auto';
-  updateSendBtn();
-  renderConversationList();
-}
-
-function renderMessages() {
-  const area = document.getElementById('messagesArea');
-  const msgs = state.conversations[state.activeChat] || [];
-  const char = state.characters.find(c => c.id === state.activeChat);
-
-  if (msgs.length === 0) {
-    area.innerHTML = `
-      <div class="empty-state" style="margin-top:40px;">
-        <div class="empty-state-icon">${char?.avatar || '🤖'}</div>
-        <div class="empty-state-title">Say hello to ${escHtml(char?.name || 'your character')}</div>
-        <div class="empty-state-subtitle">This is the beginning of your conversation.</div>
-      </div>`;
-    return;
-  }
-
-  let html = '';
-  msgs.forEach((msg, i) => {
-    const isUser = msg.role === 'user';
-    const showAvatar = !isUser && (i === 0 || msgs[i - 1]?.role === 'user');
-
-    // Date separator
-    if (i === 0 || isDifferentDay(msgs[i - 1]?.ts, msg.ts)) {
-      html += `<div class="msg-date-separator">${formatDateSep(msg.ts)}</div>`;
-    }
-
-    html += `
-      <div class="message-row ${isUser ? 'user-row' : ''}">
-        ${!isUser ? (showAvatar
-          ? `<div class="msg-avatar-small">${char?.avatar || '🤖'}</div>`
-          : `<div class="msg-avatar-spacer"></div>`)
-        : ''}
-        <div class="bubble ${isUser ? 'user' : 'bot'}">${escHtml(msg.content)}</div>
-      </div>`;
-  });
-
-  area.innerHTML = html;
-  area.scrollTop = area.scrollHeight;
-}
-
-function isDifferentDay(ts1, ts2) {
-  if (!ts1 || !ts2) return false;
-  const d1 = new Date(ts1);
-  const d2 = new Date(ts2);
-  return d1.toDateString() !== d2.toDateString();
+function formatMsgTime(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDateSep(ts) {
@@ -266,149 +147,633 @@ function formatDateSep(ts) {
   return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function appendMessage(role, content) {
+function isDifferentDay(ts1, ts2) {
+  if (!ts1) return true;
+  return new Date(ts1).toDateString() !== new Date(ts2).toDateString();
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 80) + 'px';
+}
+
+// ============================================================
+// Clock
+// ============================================================
+
+function updateClock() {
+  document.getElementById('statusTime').textContent =
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ============================================================
+// Wallpaper
+// ============================================================
+
+function applyWallpaper(value) {
+  state.wallpaper = value;
+  const screen = document.getElementById('iphoneScreen');
+  if (value && value.startsWith('http')) {
+    screen.style.background = `url('${value}') center/cover no-repeat`;
+  } else {
+    screen.style.background = value || WALLPAPERS[0].value;
+  }
+  saveState();
+}
+
+function openWallpaperPicker() {
+  renderWallpaperSwatches();
+  document.getElementById('wallpaperModal').classList.add('open');
+}
+
+function closeWallpaperPicker(event) {
+  if (event && event.target !== document.getElementById('wallpaperModal')) return;
+  document.getElementById('wallpaperModal').classList.remove('open');
+}
+
+function renderWallpaperSwatches() {
+  const container = document.getElementById('wallpaperSwatches');
+  container.innerHTML = WALLPAPERS.map((w, i) => `
+    <div
+      class="wallpaper-swatch ${state.wallpaper === w.value ? 'selected' : ''}"
+      style="background:${w.value};"
+      onclick="selectWallpaper(${i})"
+      title="${w.label}"
+    ></div>
+  `).join('');
+}
+
+function selectWallpaper(index) {
+  applyWallpaper(WALLPAPERS[index].value);
+  renderWallpaperSwatches();
+  setTimeout(() => document.getElementById('wallpaperModal').classList.remove('open'), 400);
+}
+
+function applyCustomWallpaper() {
+  const url = document.getElementById('wallpaperUrl').value.trim();
+  if (!url) return;
+  applyWallpaper(url);
+  document.getElementById('wallpaperModal').classList.remove('open');
+}
+
+// ============================================================
+// Home Screen Navigation
+// ============================================================
+
+function openApp(name) {
+  if (state.currentApp) {
+    const prev = document.getElementById('app-' + state.currentApp);
+    if (prev) prev.classList.remove('open');
+  }
+  state.currentApp = name;
+  const overlay = document.getElementById('app-' + name);
+  if (!overlay) return;
+  overlay.classList.add('open');
+
+  // Refresh content
+  if (name === 'messages') renderLINEConvList();
+  if (name === 'contacts') renderContactsList();
+  if (name === 'worldbook') renderWorldBook();
+  if (name === 'settings') renderSettings();
+}
+
+function goHome() {
+  if (!state.currentApp) return;
+  const overlay = document.getElementById('app-' + state.currentApp);
+  if (overlay) overlay.classList.remove('open');
+
+  // Also close LINE chat if open
+  closeLINEChat(true);
+  state.currentApp = null;
+}
+
+// ============================================================
+// LINE — Conversation List
+// ============================================================
+
+function renderLINEConvList(filter = '') {
+  const container = document.getElementById('lineConvList');
+  const chars = state.characters.filter(c =>
+    !filter || c.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  if (chars.length === 0) {
+    container.innerHTML = `
+      <div class="line-empty-state">
+        <div class="line-empty-icon">💬</div>
+        <div class="line-empty-title">No messages yet</div>
+        <div class="line-empty-sub">Add a character in Contacts to start chatting.</div>
+      </div>`;
+    return;
+  }
+
+  const sorted = [...chars].sort((a, b) => {
+    const aLast = lastMsg(a.id);
+    const bLast = lastMsg(b.id);
+    return (bLast?.ts || 0) - (aLast?.ts || 0);
+  });
+
+  container.innerHTML = sorted.map(char => {
+    const last = lastMsg(char.id);
+    const preview = last
+      ? (last.role === 'user' ? 'You: ' : '') + last.content.slice(0, 50)
+      : 'Tap to chat';
+    const timeStr = last ? formatShortTime(last.ts) : '';
+    return `
+      <div class="line-conv-item" onclick="openLINEChat('${char.id}')">
+        <div class="line-conv-avatar">${escHtml(char.avatar || '🤖')}</div>
+        <div class="line-conv-info">
+          <div class="line-conv-top">
+            <span class="line-conv-name">${escHtml(char.name)}</span>
+            <span class="line-conv-time">${escHtml(timeStr)}</span>
+          </div>
+          <div class="line-conv-preview">${escHtml(preview)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterLineConvs(val) {
+  renderLINEConvList(val);
+}
+
+function lastMsg(charId) {
+  const msgs = state.conversations[charId];
+  return msgs?.length ? msgs[msgs.length - 1] : null;
+}
+
+// ============================================================
+// LINE — Chat View
+// ============================================================
+
+function openLINEChat(charId) {
+  const char = state.characters.find(c => c.id === charId);
+  if (!char) return;
+
+  state.activeChat = charId;
+
+  document.getElementById('lineChatName').textContent = char.name;
+  document.getElementById('lineChatSub').textContent = char.description || 'online';
+
+  const chat = document.getElementById('lineChat');
+  const home = document.getElementById('lineHome');
+  chat.classList.add('open');
+  home.classList.add('hidden');
+
+  renderLINEMessages();
+  setTimeout(() => document.getElementById('lineInput').focus(), 350);
+}
+
+function closeLINEChat(silent = false) {
+  state.activeChat = null;
+  document.getElementById('lineChat').classList.remove('open');
+  document.getElementById('lineHome').classList.remove('hidden');
+  const input = document.getElementById('lineInput');
+  input.value = '';
+  input.style.height = 'auto';
+  updateLineSendBtn();
+  if (!silent) renderLINEConvList();
+}
+
+function openCharDetailFromChat() {
+  if (state.activeChat) openEditCharSheet(state.activeChat);
+}
+
+function renderLINEMessages() {
+  const area = document.getElementById('lineMessagesArea');
+  const msgs = state.conversations[state.activeChat] || [];
+  const char = state.characters.find(c => c.id === state.activeChat);
+
+  if (msgs.length === 0) {
+    area.innerHTML = `
+      <div style="text-align:center;padding-top:40px;">
+        <div style="font-size:48px;margin-bottom:10px;">${char?.avatar || '🤖'}</div>
+        <div style="font-size:15px;color:rgba(0,0,0,0.5);">Start a conversation with <strong>${escHtml(char?.name || 'this character')}</strong></div>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  msgs.forEach((msg, i) => {
+    const isSent = msg.role === 'user';
+    const prevMsg = msgs[i - 1];
+
+    // Date separator
+    if (isDifferentDay(prevMsg?.ts, msg.ts)) {
+      html += `<div class="line-date-sep">${escHtml(formatDateSep(msg.ts))}</div>`;
+    }
+
+    const timeStr = formatMsgTime(msg.ts);
+    const showAvatar = !isSent && (!prevMsg || prevMsg.role === 'user');
+
+    if (isSent) {
+      // Sent: [meta left][green bubble right]
+      const isRead = i < msgs.length - 1 || msg.read;
+      html += `
+        <div class="line-msg-row sent">
+          <div class="line-msg-meta">
+            ${isRead ? '<span class="line-read">Read</span>' : ''}
+            <span class="line-time">${escHtml(timeStr)}</span>
+          </div>
+          <div class="line-bubble-wrap">
+            <div class="line-bubble sent">${escHtml(msg.content)}</div>
+          </div>
+        </div>`;
+    } else {
+      // Received: [avatar][white bubble][meta right]
+      html += `
+        <div class="line-msg-row received">
+          ${showAvatar
+            ? `<div class="line-msg-avatar">${escHtml(char?.avatar || '🤖')}</div>`
+            : `<div class="line-msg-avatar-spacer"></div>`}
+          <div class="line-bubble-wrap">
+            <div class="line-bubble received">${escHtml(msg.content)}</div>
+            <div class="line-msg-meta">
+              <span class="line-time">${escHtml(timeStr)}</span>
+            </div>
+          </div>
+        </div>`;
+    }
+  });
+
+  area.innerHTML = html;
+  area.scrollTop = area.scrollHeight;
+}
+
+function appendMsg(role, content) {
   if (!state.conversations[state.activeChat]) {
     state.conversations[state.activeChat] = [];
   }
-  state.conversations[state.activeChat].push({ role, content, ts: Date.now() });
+  const msg = { role, content, ts: Date.now(), read: false };
+  state.conversations[state.activeChat].push(msg);
+  saveState();
+  return msg;
+}
+
+function markLastUserMsgRead() {
+  const msgs = state.conversations[state.activeChat];
+  if (!msgs) return;
+  // Find last user message and mark read
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'user') {
+      msgs[i].read = true;
+      break;
+    }
+  }
   saveState();
 }
 
 function showTypingIndicator() {
-  const area = document.getElementById('messagesArea');
+  const area = document.getElementById('lineMessagesArea');
   const char = state.characters.find(c => c.id === state.activeChat);
-
   const el = document.createElement('div');
-  el.className = 'typing-indicator';
-  el.id = 'typingIndicator';
+  el.id = 'typingRow';
+  el.className = 'line-typing-row';
   el.innerHTML = `
-    <div class="msg-avatar-small">${char?.avatar || '🤖'}</div>
-    <div class="typing-bubble">
-      <div class="typing-dot"></div>
-      <div class="typing-dot"></div>
-      <div class="typing-dot"></div>
+    <div class="line-msg-avatar">${char?.avatar || '🤖'}</div>
+    <div class="line-typing-bubble">
+      <div class="line-typing-dot"></div>
+      <div class="line-typing-dot"></div>
+      <div class="line-typing-dot"></div>
     </div>`;
   area.appendChild(el);
   area.scrollTop = area.scrollHeight;
 }
 
 function removeTypingIndicator() {
-  document.getElementById('typingIndicator')?.remove();
+  document.getElementById('typingRow')?.remove();
 }
 
 // ============================================================
-// MESSAGES — Send + Claude API
+// Send Message + API
 // ============================================================
 
 let isSending = false;
 
-async function sendMessage() {
+async function sendLineMessage() {
   if (isSending) return;
 
-  const input = document.getElementById('chatInput');
+  const input = document.getElementById('lineInput');
   const text = input.value.trim();
   if (!text) return;
 
   if (!state.settings.apiKey) {
     showToast('Add your API key in Settings first');
-    switchTab('settings');
+    closeLINEChat(true);
+    goHome();
+    setTimeout(() => openApp('settings'), 400);
     return;
   }
 
   isSending = true;
   input.value = '';
   input.style.height = 'auto';
-  updateSendBtn();
+  updateLineSendBtn();
 
-  // Append user message
-  appendMessage('user', text);
-  renderMessages();
-
-  // Typing indicator
+  appendMsg('user', text);
+  renderLINEMessages();
   showTypingIndicator();
-  document.getElementById('messagesArea').scrollTop = 99999;
+  document.getElementById('lineMessagesArea').scrollTop = 99999;
 
   try {
-    const reply = await callClaude(state.activeChat);
+    const reply = await callAPI(state.activeChat);
     removeTypingIndicator();
-    appendMessage('assistant', reply);
-    renderMessages();
+    markLastUserMsgRead();
+    appendMsg('assistant', reply);
+    renderLINEMessages();
   } catch (err) {
     removeTypingIndicator();
-    const msg = err.message || 'Something went wrong';
-    showToast('Error: ' + msg.slice(0, 60));
-    console.error('Claude API error:', err);
+    const errMsg = err.message || 'Something went wrong';
+    showToast('Error: ' + errMsg.slice(0, 60));
+    console.error('API error:', err);
   }
 
   isSending = false;
-  updateSendBtn();
+  updateLineSendBtn();
 }
 
-async function callClaude(charId) {
+function handleLineInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendLineMessage();
+  }
+}
+
+function updateLineSendBtn() {
+  const input = document.getElementById('lineInput');
+  const btn = document.getElementById('lineSendBtn');
+  btn.disabled = !input?.value.trim() || isSending;
+}
+
+// ============================================================
+// Multi-Provider API Call
+// ============================================================
+
+async function callAPI(charId) {
   const char = state.characters.find(c => c.id === charId);
   const history = state.conversations[charId] || [];
+  const { provider, apiKey, model } = state.settings;
+  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
+  const baseUrl = provider === 'custom'
+    ? (state.settings.baseUrl || '').replace(/\/$/, '')
+    : provDef.baseUrl;
 
-  // Build system prompt: World Book + character persona
-  const worldBookText = state.worldBook
-    .filter(e => e.content.trim())
+  // Build system prompt
+  const worldText = state.worldBook
+    .filter(e => e.content?.trim())
     .map(e => `[${e.title || 'World Info'}]\n${e.content}`)
     .join('\n\n');
 
-  let systemParts = [];
-  if (worldBookText) systemParts.push('# World Book\n' + worldBookText);
-  if (char?.systemPrompt) systemParts.push('# Character\n' + char.systemPrompt);
-  if (!systemParts.length) systemParts.push('You are a helpful assistant.');
+  const parts = [];
+  if (worldText) parts.push('# World Book\n' + worldText);
+  if (char?.systemPrompt) parts.push('# Character\n' + char.systemPrompt);
+  if (!parts.length) parts.push('You are a helpful assistant.');
+  const systemPrompt = parts.join('\n\n---\n\n');
 
-  const systemPrompt = systemParts.join('\n\n---\n\n');
-
-  // Messages: only role + content for API
-  const apiMessages = history.map(m => ({
+  // History for API (only role + content)
+  const apiHistory = history.map(m => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
     content: m.content,
   }));
 
-  const body = {
-    model: state.settings.model,
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: apiMessages,
-  };
+  if (provDef.format === 'anthropic') {
+    return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory);
+  } else {
+    return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef.chatPath);
+  }
+}
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+async function callAnthropic(baseUrl, apiKey, model, system, messages) {
+  const resp = await fetch(`${baseUrl}/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': state.settings.apiKey,
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ model, max_tokens: 1024, system, messages }),
   });
-
   if (!resp.ok) {
-    const errData = await resp.json().catch(() => ({}));
-    throw new Error(errData?.error?.message || `HTTP ${resp.status}`);
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e?.error?.message || `HTTP ${resp.status}`);
   }
-
   const data = await resp.json();
   return data.content?.[0]?.text || '';
 }
 
-function handleInputKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
+async function callOpenAICompat(baseUrl, apiKey, model, system, messages, chatPath) {
+  const url = baseUrl + chatPath;
+  const openAIMessages = [
+    { role: 'system', content: system },
+    ...messages,
+  ];
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, max_tokens: 1024, messages: openAIMessages }),
+  });
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e?.error?.message || `HTTP ${resp.status}`);
   }
-}
-
-function updateSendBtn() {
-  const input = document.getElementById('chatInput');
-  const btn = document.getElementById('sendBtn');
-  btn.disabled = !input.value.trim() || isSending;
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
 // ============================================================
-// Character Modal (Add / Edit)
+// Fetch Models
+// ============================================================
+
+async function fetchModels() {
+  const { provider, apiKey } = state.settings;
+  if (!apiKey) { showToast('Enter your API key first'); return; }
+
+  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
+  const baseUrl = provider === 'custom'
+    ? (state.settings.baseUrl || '').replace(/\/$/, '')
+    : provDef.baseUrl;
+
+  const statusEl = document.getElementById('fetchModelsStatus');
+  if (statusEl) statusEl.textContent = '…';
+
+  try {
+    let models = [];
+    if (provDef.format === 'anthropic') {
+      const resp = await fetch(`${baseUrl}/v1/models`, {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      models = (data.data || []).map(m => m.id);
+    } else {
+      const resp = await fetch(`${baseUrl}/models`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      models = (data.data || []).map(m => m.id).sort();
+    }
+
+    if (!models.length) throw new Error('No models returned');
+
+    // Populate the model select
+    const select = document.getElementById('settingsModel');
+    select.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+    if (state.settings.model && models.includes(state.settings.model)) {
+      select.value = state.settings.model;
+    } else {
+      state.settings.model = models[0];
+      select.value = models[0];
+      saveState();
+    }
+
+    if (statusEl) statusEl.textContent = `${models.length} models`;
+    showToast(`Loaded ${models.length} models`);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Failed';
+    showToast('Fetch failed: ' + (err.message || 'unknown error'));
+  }
+}
+
+// ============================================================
+// Settings
+// ============================================================
+
+function renderSettings() {
+  const s = state.settings;
+  const provEl = document.getElementById('settingsProvider');
+  if (provEl) provEl.value = s.provider || 'anthropic';
+  document.getElementById('settingsApiKey').value = s.apiKey || '';
+  document.getElementById('settingsUserName').value = s.userName || '';
+  renderModelSelect();
+  onProviderChange(false); // update URL row visibility
+}
+
+function renderModelSelect() {
+  const select = document.getElementById('settingsModel');
+  if (!select) return;
+  const provDef = PROVIDERS[state.settings.provider] || PROVIDERS.anthropic;
+  const models = provDef.defaultModels;
+
+  // Keep existing options if they were fetched, just ensure current model is there
+  const existing = Array.from(select.options).map(o => o.value);
+  if (!existing.length || !existing.includes(state.settings.model)) {
+    select.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  }
+  if (state.settings.model) {
+    if ([...select.options].some(o => o.value === state.settings.model)) {
+      select.value = state.settings.model;
+    }
+  }
+}
+
+function onProviderChange(doSave = true) {
+  const provEl = document.getElementById('settingsProvider');
+  if (!provEl) return;
+  const provider = provEl.value;
+  state.settings.provider = provider;
+
+  const rowBaseUrl = document.getElementById('rowBaseUrl');
+  if (rowBaseUrl) rowBaseUrl.style.display = provider === 'custom' ? '' : 'none';
+
+  const baseUrlInput = document.getElementById('settingsBaseUrl');
+  if (baseUrlInput) {
+    if (provider !== 'custom') {
+      baseUrlInput.value = PROVIDERS[provider]?.baseUrl || '';
+    } else {
+      baseUrlInput.value = state.settings.baseUrl || '';
+    }
+  }
+
+  // Reset model options to provider defaults
+  renderModelSelect();
+
+  if (doSave) saveSettings();
+}
+
+function saveSettings() {
+  state.settings.provider  = document.getElementById('settingsProvider')?.value || state.settings.provider;
+  state.settings.baseUrl   = document.getElementById('settingsBaseUrl')?.value?.trim() || '';
+  state.settings.apiKey    = document.getElementById('settingsApiKey')?.value?.trim() || '';
+  state.settings.model     = document.getElementById('settingsModel')?.value || state.settings.model;
+  state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
+  saveState();
+}
+
+function clearAllChats() {
+  if (!confirm('Clear all chat history? This cannot be undone.')) return;
+  state.conversations = {};
+  saveState();
+  showToast('Chat history cleared');
+  if (state.activeChat) closeLINEChat(true);
+  if (state.currentApp === 'messages') renderLINEConvList();
+}
+
+// ============================================================
+// Contacts
+// ============================================================
+
+function renderContactsList(filter = '') {
+  const container = document.getElementById('contactsList');
+  if (!container) return;
+  const chars = state.characters.filter(c =>
+    !filter || c.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  if (chars.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="background:white;">
+        <div class="empty-state-icon">👥</div>
+        <div class="empty-state-title">No characters yet</div>
+        <div class="empty-state-sub">Tap + to create your first AI character.</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = chars.map(char => `
+    <div class="contact-item" onclick="openEditCharSheet('${char.id}')">
+      <div class="contact-avatar">${escHtml(char.avatar || '🤖')}</div>
+      <div class="contact-info">
+        <div class="contact-name">${escHtml(char.name)}</div>
+        <div class="contact-desc">${escHtml(char.description || 'No description')}</div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button style="background:none;border:none;color:#06C755;font-size:20px;cursor:pointer;padding:6px;"
+          onclick="event.stopPropagation();chatFromContacts('${char.id}')">💬</button>
+        <span style="color:#C7C7CC;font-size:18px;">›</span>
+      </div>
+    </div>`).join('');
+}
+
+function chatFromContacts(charId) {
+  goHome();
+  setTimeout(() => {
+    openApp('messages');
+    setTimeout(() => openLINEChat(charId), 400);
+  }, 400);
+}
+
+function filterContacts(val) {
+  renderContactsList(val);
+}
+
+// ============================================================
+// Character Modal
 // ============================================================
 
 function openAddCharSheet() {
@@ -435,19 +800,6 @@ function openEditCharSheet(charId) {
   document.getElementById('charModal').classList.add('open');
 }
 
-function openCharDetailFromChat() {
-  if (state.activeChat) openEditCharSheet(state.activeChat);
-}
-
-function openNewChatSheet() {
-  if (state.characters.length === 0) {
-    showToast('Add characters in Contacts first');
-    switchTab('contacts');
-  } else {
-    switchTab('contacts');
-  }
-}
-
 function closeCharModal(event) {
   if (event && event.target !== document.getElementById('charModal')) return;
   document.getElementById('charModal').classList.remove('open');
@@ -455,114 +807,70 @@ function closeCharModal(event) {
 
 function saveCharacter() {
   const avatar = document.getElementById('charAvatar').value.trim() || '🤖';
-  const name = document.getElementById('charName').value.trim();
+  const name   = document.getElementById('charName').value.trim();
   const description = document.getElementById('charDesc').value.trim();
   const systemPrompt = document.getElementById('charSystem').value.trim();
 
-  if (!name) {
-    showToast('Please enter a name');
-    return;
-  }
+  if (!name) { showToast('Please enter a name'); return; }
 
   if (state.editingCharId) {
     const char = state.characters.find(c => c.id === state.editingCharId);
-    if (char) {
-      char.avatar = avatar;
-      char.name = name;
-      char.description = description;
-      char.systemPrompt = systemPrompt;
-    }
+    if (char) Object.assign(char, { avatar, name, description, systemPrompt });
   } else {
-    const newChar = { id: uuid(), avatar, name, description, systemPrompt };
-    state.characters.push(newChar);
+    state.characters.push({ id: uuid(), avatar, name, description, systemPrompt });
   }
 
   saveState();
   document.getElementById('charModal').classList.remove('open');
   renderContactsList();
-  renderConversationList();
+  if (state.currentApp === 'messages') renderLINEConvList();
   showToast(state.editingCharId ? 'Character updated' : 'Character added');
 }
 
 function deleteCharacter() {
   if (!state.editingCharId) return;
-  if (!confirm('Delete this character and their entire chat history?')) return;
+  if (!confirm('Delete this character and all chat history?')) return;
 
   state.characters = state.characters.filter(c => c.id !== state.editingCharId);
   delete state.conversations[state.editingCharId];
 
   saveState();
   document.getElementById('charModal').classList.remove('open');
-
-  if (state.activeChat === state.editingCharId) closeChat();
+  if (state.activeChat === state.editingCharId) closeLINEChat(true);
   renderContactsList();
-  renderConversationList();
+  if (state.currentApp === 'messages') renderLINEConvList();
   showToast('Character deleted');
 }
 
-// ============================================================
-// CONTACTS — Character List
-// ============================================================
-
-function renderContactsList(filter = '') {
-  const container = document.getElementById('contactsList');
-  const chars = state.characters.filter(c =>
-    !filter || c.name.toLowerCase().includes(filter.toLowerCase())
-  );
-
-  if (chars.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">👥</div>
-        <div class="empty-state-title">No characters yet</div>
-        <div class="empty-state-subtitle">Tap + to create your first AI character persona.</div>
-      </div>`;
-    return;
+function openNewChatSheet() {
+  if (!state.characters.length) {
+    showToast('Add characters in Contacts first');
+    goHome();
+    setTimeout(() => openApp('contacts'), 450);
   }
-
-  container.innerHTML = chars.map(char => `
-    <div class="contact-item" onclick="openEditCharSheet('${char.id}')">
-      <div class="contact-avatar">${char.avatar || '🤖'}</div>
-      <div class="contact-info">
-        <div class="contact-name">${escHtml(char.name)}</div>
-        <div class="contact-desc">${escHtml(char.description || char.systemPrompt?.slice(0, 60) || 'No description')}</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button style="background:none;border:none;color:var(--ios-blue);font-size:20px;cursor:pointer;padding:4px 8px;"
-          onclick="event.stopPropagation();startChatWithChar('${char.id}')">💬</button>
-        <span class="contact-chevron">›</span>
-      </div>
-    </div>`).join('');
-}
-
-function startChatWithChar(charId) {
-  switchTab('messages');
-  openChat(charId);
-}
-
-function filterContacts(val) {
-  renderContactsList(val);
+  // else: already on messages list, just show it
 }
 
 // ============================================================
-// WORLD BOOK
+// World Book
 // ============================================================
 
 function renderWorldBook() {
   const container = document.getElementById('worldbookList');
+  if (!container) return;
 
-  if (state.worldBook.length === 0) {
+  if (!state.worldBook.length) {
     container.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state" style="background:transparent;">
         <div class="empty-state-icon">🌍</div>
         <div class="empty-state-title">World Book is empty</div>
-        <div class="empty-state-subtitle">Add global prompts that will be included in every conversation.</div>
+        <div class="empty-state-sub">Global prompts included in every conversation.</div>
       </div>`;
     return;
   }
 
-  container.innerHTML = state.worldBook.map((entry, i) => `
-    <div class="worldbook-entry" id="wbe-${entry.id}">
+  container.innerHTML = state.worldBook.map(entry => `
+    <div class="worldbook-entry">
       <div class="worldbook-entry-header">
         <input
           class="worldbook-entry-title-input"
@@ -575,7 +883,7 @@ function renderWorldBook() {
       <div class="worldbook-entry-body">
         <textarea
           class="worldbook-entry-textarea"
-          placeholder="Enter world lore, rules, or context that applies globally..."
+          placeholder="Enter world lore, rules, or context..."
           oninput="updateWBContent('${entry.id}', this.value)"
         >${escHtml(entry.content)}</textarea>
       </div>
@@ -586,7 +894,6 @@ function addWorldBookEntry() {
   state.worldBook.push({ id: uuid(), title: 'New Entry', content: '' });
   saveState();
   renderWorldBook();
-  // Focus last entry title
   setTimeout(() => {
     const inputs = document.querySelectorAll('.worldbook-entry-title-input');
     if (inputs.length) inputs[inputs.length - 1].focus();
@@ -594,75 +901,27 @@ function addWorldBookEntry() {
 }
 
 function updateWBTitle(id, val) {
-  const entry = state.worldBook.find(e => e.id === id);
-  if (entry) { entry.title = val; saveState(); }
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) { e.title = val; saveState(); }
 }
 
 function updateWBContent(id, val) {
-  const entry = state.worldBook.find(e => e.id === id);
-  if (entry) { entry.content = val; saveState(); }
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) { e.content = val; saveState(); }
 }
 
 function deleteWBEntry(id) {
-  state.worldBook = state.worldBook.filter(e => e.id !== id);
+  state.worldBook = state.worldBook.filter(x => x.id !== id);
   saveState();
   renderWorldBook();
 }
 
 // ============================================================
-// SETTINGS
-// ============================================================
-
-function renderSettings() {
-  document.getElementById('settingsApiKey').value = state.settings.apiKey || '';
-  document.getElementById('settingsModel').value = state.settings.model || 'claude-sonnet-4-6';
-  document.getElementById('settingsUserName').value = state.settings.userName || '';
-}
-
-function saveApiKey() {
-  state.settings.apiKey = document.getElementById('settingsApiKey').value.trim();
-  saveState();
-}
-
-function saveModel() {
-  state.settings.model = document.getElementById('settingsModel').value;
-  saveState();
-}
-
-function saveUserName() {
-  state.settings.userName = document.getElementById('settingsUserName').value.trim();
-  saveState();
-}
-
-function clearAllChats() {
-  if (!confirm('Clear all chat history? This cannot be undone.')) return;
-  state.conversations = {};
-  saveState();
-  showToast('Chat history cleared');
-  if (state.activeChat) closeChat();
-  renderConversationList();
-}
-
-// ============================================================
-// XSS-safe HTML escaping
-// ============================================================
-
-function escHtml(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// ============================================================
-// Seed demo character if first run
+// Seed demo data
 // ============================================================
 
 function seedIfEmpty() {
-  if (state.characters.length === 0) {
+  if (!state.characters.length) {
     state.characters.push({
       id: uuid(),
       avatar: '🌸',
@@ -671,7 +930,7 @@ function seedIfEmpty() {
       systemPrompt:
         'You are Aria, a warm, witty, and thoughtful AI companion. ' +
         'You speak in a friendly, conversational tone and love exploring ideas. ' +
-        'Keep responses concise and natural, like a real text conversation.',
+        'Keep responses concise and natural, like a real text message.',
     });
     saveState();
   }
@@ -685,9 +944,8 @@ function init() {
   loadState();
   seedIfEmpty();
 
-  // Initial render
-  renderConversationList();
-  renderSettings();
+  // Apply wallpaper
+  applyWallpaper(state.wallpaper || WALLPAPERS[0].value);
 
   // Clock
   updateClock();
