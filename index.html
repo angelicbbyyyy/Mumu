@@ -180,8 +180,10 @@
           </button>
         </div>
         <div class="line-search-bar" id="lineSearchBar">
-          <span>🔍</span>
-          <input type="text" id="lineSearchInput" placeholder="Search" oninput="handleLineSearch(this.value)">
+          <div class="line-search-field">
+            <span class="line-search-icon">⌕</span>
+            <input type="text" id="lineSearchInput" placeholder="Search" oninput="handleLineSearch(this.value)">
+          </div>
         </div>
         <div class="line-panel line-panel-active" id="lineChatsPanel">
           <div class="line-conv-list" id="lineConvList"></div>
@@ -197,19 +199,27 @@
         </div>
         <div class="line-tabbar">
           <button class="line-tab active" id="lineTabChats" onclick="setLineTab('chats')">
-            <span class="line-tab-icon">💬</span>
+            <span class="line-tab-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16a2 2 0 0 1 2 2v7.4a2 2 0 0 1-2 2H9l-4.5 3.8V17H4a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2z"/></svg>
+            </span>
             <span class="line-tab-label">Chats</span>
           </button>
           <button class="line-tab" id="lineTabVoom" onclick="setLineTab('voom')">
-            <span class="line-tab-icon">🟢</span>
+            <span class="line-tab-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 1 1 0 17.6 8.8 8.8 0 0 1 0-17.6zm-2.2 5.4v6.8l5.8-3.4-5.8-3.4z"/></svg>
+            </span>
             <span class="line-tab-label">VOOM</span>
           </button>
           <button class="line-tab" id="lineTabContacts" onclick="setLineTab('contacts')">
-            <span class="line-tab-icon">👥</span>
+            <span class="line-tab-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 8 11zm8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zM8 12.8c-3.3 0-6 1.8-6 4v1.2h12V16.8c0-2.2-2.7-4-6-4zm8 .4c-1.1 0-2.2.3-3 .8 1.2.9 2 2 2 3.3v.7h7v-.8c0-2.2-2.7-4-6-4z"/></svg>
+            </span>
             <span class="line-tab-label">Contacts</span>
           </button>
           <button class="line-tab" id="lineTabProfile" onclick="setLineTab('profile')">
-            <span class="line-tab-icon">🙂</span>
+            <span class="line-tab-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4.2 4.2 0 1 0-4.2-4.2A4.2 4.2 0 0 0 12 12zm0 2.1c-4.4 0-8 2.4-8 5.4V21h16v-1.5c0-3-3.6-5.4-8-5.4z"/></svg>
+            </span>
             <span class="line-tab-label">Profile</span>
           </button>
         </div>
@@ -272,7 +282,7 @@
             <textarea
               class="line-input"
               id="lineInput"
-              placeholder="输入消息..."
+              placeholder="Message"
               rows="1"
               oninput="autoResize(this); updateLineSendBtn()"
               onkeydown="handleLineInputKeydown(event)"
