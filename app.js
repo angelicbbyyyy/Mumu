@@ -120,6 +120,14 @@ const DEFAULT_WALLET = {
   transactions: [],
 };
 
+const WALLET_CARD_THEMES = [
+  'linear-gradient(135deg, #1d3b78 0%, #2b6ff4 52%, #7eb7ff 100%)',
+  'linear-gradient(135deg, #1a1a1d 0%, #34353a 48%, #101114 100%)',
+  'linear-gradient(135deg, #5f172d 0%, #b4235f 50%, #ff82b2 100%)',
+  'linear-gradient(135deg, #264653 0%, #2a9d8f 55%, #85e5c5 100%)',
+  'linear-gradient(135deg, #7c2d12 0%, #ea580c 56%, #fdba74 100%)',
+];
+
 function parseTagList(raw) {
   if (Array.isArray(raw)) {
     return raw.map(tag => String(tag).trim()).filter(Boolean);
@@ -190,24 +198,66 @@ function normalizeConversations(raw = {}) {
 }
 
 function normalizeWallet(raw = {}) {
+  const rawCards = Array.isArray(raw.cards) ? raw.cards.map(card => ({
+    id: card.id || uuid(),
+    label: card.label || 'Card',
+    network: card.network || 'Visa',
+    last4: String(card.last4 || '').slice(-4) || '0000',
+  })) : [];
+  const cards = rawCards.filter(card => !isStarterWalletCard(card));
+  const rawTransactions = Array.isArray(raw.transactions) ? raw.transactions.map(tx => ({
+    id: tx.id || uuid(),
+    type: tx.type || 'fund',
+    amount: Number(tx.amount) || 0,
+    charId: tx.charId || '',
+    ts: tx.ts || Date.now(),
+    note: tx.note || '',
+  })) : [];
+  const transactions = rawTransactions.filter(tx => !isStarterWalletTransaction(tx));
+
   return {
     balance: Number(raw.balance) || 0,
-    cards: Array.isArray(raw.cards) ? raw.cards.map(card => ({
-      id: card.id || uuid(),
-      label: card.label || 'Card',
-      network: card.network || 'Visa',
-      last4: String(card.last4 || '').slice(-4) || '0000',
-    })) : [],
+    cards,
     characterBalances: raw.characterBalances && typeof raw.characterBalances === 'object' ? raw.characterBalances : {},
-    transactions: Array.isArray(raw.transactions) ? raw.transactions.map(tx => ({
-      id: tx.id || uuid(),
-      type: tx.type || 'fund',
-      amount: Number(tx.amount) || 0,
-      charId: tx.charId || '',
-      ts: tx.ts || Date.now(),
-      note: tx.note || '',
-    })) : [],
+    transactions,
   };
+}
+
+function isStarterWalletCard(card = {}) {
+  return (card.label || '').trim() === 'Apple Cash'
+    && (card.network || '').trim() === 'Visa'
+    && String(card.last4 || '') === '4242';
+}
+
+function isStarterWalletTransaction(tx = {}) {
+  return (tx.note || '').trim() === 'Starter balance';
+}
+
+function getWalletCardTheme(card, index) {
+  const key = `${card.network || ''}-${card.label || ''}-${index}`.length;
+  return WALLET_CARD_THEMES[key % WALLET_CARD_THEMES.length];
+}
+
+function renderWalletCardDots(count, activeIndex = 0) {
+  const dots = document.getElementById('walletCardDots');
+  if (!dots) return;
+  if (count <= 1) {
+    dots.innerHTML = '';
+    return;
+  }
+  dots.innerHTML = Array.from({ length: count }, (_, index) => `
+    <span class="wallet-card-dot ${index === activeIndex ? 'active' : ''}"></span>
+  `).join('');
+}
+
+function syncWalletCardDots() {
+  const deck = document.getElementById('walletCardList');
+  if (!deck || !deck.children.length) return;
+  const firstCard = deck.querySelector('.wallet-card, .wallet-card-empty');
+  if (!firstCard) return;
+  const cardWidth = firstCard.getBoundingClientRect().width + 14;
+  const activeIndex = Math.max(0, Math.min(deck.children.length - 1, Math.round(deck.scrollLeft / Math.max(cardWidth, 1))));
+  renderWalletCardDots(deck.children.length, activeIndex);
 }
 
 function trimTrailingSlash(str) {
@@ -1365,20 +1415,40 @@ function renderWallet() {
 
   const balanceEl = document.getElementById('walletBalanceDisplay');
   if (balanceEl) balanceEl.textContent = formatCurrency(state.wallet.balance);
+  const balanceMetaEl = document.getElementById('walletBalanceMeta');
+  if (balanceMetaEl) {
+    balanceMetaEl.textContent = `${state.wallet.cards.length} card${state.wallet.cards.length === 1 ? '' : 's'} in Wallet • ${state.characters.length} character${state.characters.length === 1 ? '' : 's'} available`;
+  }
 
   const cardList = document.getElementById('walletCardList');
   if (cardList) {
     if (!state.wallet.cards.length) {
-      cardList.innerHTML = `<div class="settings-row"><div class="settings-row-label">No cards yet</div></div>`;
+      cardList.innerHTML = `
+        <div class="wallet-card-empty">
+          <div class="wallet-card-empty-title">No cards in Wallet yet</div>
+          <div class="wallet-card-empty-sub">Add your first card below to start building your stack.</div>
+        </div>
+      `;
     } else {
-      cardList.innerHTML = state.wallet.cards.map(card => `
-        <div class="settings-row">
-          <div class="settings-row-icon" style="background:#eef4ff;">💳</div>
-          <div class="settings-row-label">${escHtml(card.label)}</div>
-          <div class="settings-row-value">${escHtml(card.network)} •••• ${escHtml(card.last4)}</div>
+      cardList.innerHTML = state.wallet.cards.map((card, index) => `
+        <div class="wallet-card" style="background:${escHtml(getWalletCardTheme(card, index))};">
+          <div class="wallet-card-brand">
+            <span>${escHtml(card.label)}</span>
+            <span class="wallet-card-chip"></span>
+          </div>
+          <div class="wallet-card-number">•••• ${escHtml(card.last4)}</div>
+          <div class="wallet-card-footer">
+            <div>
+              <div class="wallet-card-label">${escHtml(card.label)}</div>
+              <div class="wallet-card-meta">Available in your Wallet</div>
+            </div>
+            <div class="wallet-card-network">${escHtml(card.network)}</div>
+          </div>
         </div>
       `).join('');
     }
+    cardList.onscroll = syncWalletCardDots;
+    renderWalletCardDots(cardList.children.length, 0);
   }
 
   const charSelect = document.getElementById('walletTransferCharacter');
@@ -2138,12 +2208,6 @@ function seedIfEmpty() {
   }
   if (!state.persona.userAlias) state.persona.userAlias = state.settings.userName || 'You';
   state.characters.forEach(char => ensureWalletCharacterBalance(char.id));
-  if (!state.wallet.cards.length) {
-    state.wallet.cards.push({ id: uuid(), label: 'Apple Cash', network: 'Visa', last4: '4242' });
-  }
-  if (!state.wallet.transactions.length) {
-    state.wallet.transactions.push({ id: uuid(), type: 'fund', amount: state.wallet.balance, ts: Date.now(), note: 'Starter balance' });
-  }
   saveState();
 }
 

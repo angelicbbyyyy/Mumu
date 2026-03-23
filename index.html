@@ -321,19 +321,22 @@
       </div>
       <div class="wallet-scroll">
         <div class="wallet-hero">
-          <div class="wallet-hero-label">Available Balance</div>
+          <div class="wallet-hero-label">Your Balance</div>
           <div class="wallet-hero-balance" id="walletBalanceDisplay">$0.00</div>
-          <div class="wallet-hero-sub">Apple Cash style starter wallet for your simulator</div>
+          <div class="wallet-hero-sub" id="walletBalanceMeta">Ready to send, save, and manage inside Wallet</div>
         </div>
 
-        <div class="settings-section-label">Cards</div>
-        <div class="settings-group" id="walletCardList"></div>
+        <div class="settings-section-label">Your Cards</div>
+        <div class="wallet-card-section">
+          <div class="wallet-card-deck" id="walletCardList"></div>
+          <div class="wallet-card-dots" id="walletCardDots"></div>
+        </div>
 
         <div class="settings-section-label">Add Card</div>
         <div class="form-section">
           <div class="form-row">
             <span class="form-label">Card Name</span>
-            <input class="form-input" id="walletCardLabel" type="text" placeholder="Main Card">
+            <input class="form-input" id="walletCardLabel" type="text" placeholder="Personal Card">
           </div>
           <div class="form-row">
             <span class="form-label">Network</span>
@@ -348,7 +351,7 @@
           <button class="btn btn-primary" onclick="addWalletCard()">Add Card</button>
         </div>
 
-        <div class="settings-section-label">Add Funds</div>
+        <div class="settings-section-label">Add Money</div>
         <div class="form-section">
           <div class="form-row">
             <span class="form-label">Amount</span>
@@ -356,10 +359,10 @@
           </div>
         </div>
         <div class="modal-actions wallet-actions">
-          <button class="btn btn-primary" onclick="addWalletFunds()">Add Funds</button>
+          <button class="btn btn-primary" onclick="addWalletFunds()">Add Money</button>
         </div>
 
-        <div class="settings-section-label">Send To Character</div>
+        <div class="settings-section-label">Send Money</div>
         <div class="form-section">
           <div class="form-row">
             <span class="form-label">Character</span>
@@ -374,7 +377,7 @@
           <button class="btn btn-primary" onclick="sendWalletFunds()">Send Money</button>
         </div>
 
-        <div class="settings-section-label">Character Balances</div>
+        <div class="settings-section-label">Character Wallets</div>
         <div class="settings-group" id="walletCharacterList"></div>
       </div>
       <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
