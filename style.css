@@ -22,8 +22,8 @@
   --ios-gray5: #E5E5EA;
   --ios-gray6: #F2F2F7;
   --ios-separator: rgba(60,60,67,0.29);
-  --line-green: #06C755;
-  --line-chat-bg: #B2C5D5;
+  --line-green: #3fc050;
+  --line-chat-bg: #8fa8c8;
 
   --phone-width: 393px;
   --phone-height: 852px;
@@ -599,10 +599,21 @@ body {
 
 .line-chat-sub {
   font-size: 11px;
-  color: #aaa;
+  color: #999;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.line-sticker {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  display: block;
 }
 
 .line-chat-nav-right {
@@ -667,13 +678,14 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: #e8e8e8;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
   align-self: flex-end;
+  overflow: hidden;
 }
 
 .line-msg-avatar-spacer {
@@ -779,8 +791,8 @@ body {
 .line-input-bar {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  padding: 8px 8px 10px;
+  gap: 4px;
+  padding: 8px 6px 10px;
   background: white;
   border-top: 1px solid #e0e0e0;
   flex-shrink: 0;
@@ -853,8 +865,16 @@ body {
 }
 
 .line-send-btn svg {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+}
+
+.line-send-btn:not(:disabled) svg {
+  stroke: var(--line-green);
+}
+
+.line-send-btn:disabled svg {
+  stroke: #bbb;
 }
 
 /* Empty state in chat list */

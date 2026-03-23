@@ -320,7 +320,7 @@ function openLINEChat(charId) {
   state.activeChat = charId;
 
   document.getElementById('lineChatName').textContent = char.name;
-  document.getElementById('lineChatSub').textContent = char.description || 'online';
+  document.getElementById('lineChatSub').textContent = char.description ? `📍 ${char.description}` : '📍 Mobile';
 
   const chat = document.getElementById('lineChat');
   const home = document.getElementById('lineHome');
