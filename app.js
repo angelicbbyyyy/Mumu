@@ -395,6 +395,15 @@ function applyWallpaper(value) {
   saveState();
 }
 
+function finalizeWallpaperChange(message = 'Wallpaper updated') {
+  renderWallpaperSwatches();
+  document.getElementById('wallpaperModal').classList.remove('open');
+  showToast(message);
+  if (state.currentApp === 'settings') {
+    setTimeout(() => goHome(), 180);
+  }
+}
+
 function openWallpaperPicker() {
   renderWallpaperSwatches();
   document.getElementById('wallpaperUrl').value = /^https?:\/\//i.test(state.wallpaper || '') ? state.wallpaper : '';
@@ -421,10 +430,9 @@ function renderWallpaperSwatches() {
 
 function selectWallpaper(index) {
   applyWallpaper(WALLPAPERS[index].value);
-  renderWallpaperSwatches();
   document.getElementById('wallpaperUrl').value = '';
   updateWallpaperPreview('');
-  setTimeout(() => document.getElementById('wallpaperModal').classList.remove('open'), 400);
+  finalizeWallpaperChange();
 }
 
 function applyCustomWallpaper() {
@@ -432,7 +440,7 @@ function applyCustomWallpaper() {
   if (!url) return;
   applyWallpaper(url);
   updateWallpaperPreview(url);
-  document.getElementById('wallpaperModal').classList.remove('open');
+  finalizeWallpaperChange();
 }
 
 function previewWallpaperUrl(value) {
@@ -452,7 +460,8 @@ function handleWallpaperImageChange(event) {
     document.getElementById('wallpaperUrl').value = '';
     updateWallpaperPreview(result);
     applyWallpaper(result);
-    renderWallpaperSwatches();
+    event.target.value = '';
+    finalizeWallpaperChange('Wallpaper updated from photo');
   };
   reader.readAsDataURL(file);
 }
@@ -461,7 +470,7 @@ function clearCustomWallpaper() {
   document.getElementById('wallpaperUrl').value = '';
   updateWallpaperPreview('');
   applyWallpaper(WALLPAPERS[0].value);
-  renderWallpaperSwatches();
+  finalizeWallpaperChange('Wallpaper reset');
 }
 
 // ============================================================
