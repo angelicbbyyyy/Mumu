@@ -1231,6 +1231,10 @@ body {
   min-width: 0;
 }
 
+.settings-input-left {
+  text-align: left;
+}
+
 .settings-input::placeholder { color: var(--ios-gray3); }
 
 .settings-select {

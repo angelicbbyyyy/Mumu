@@ -29,6 +29,10 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
+    customFormat: 'openai',
+    customAuth: 'bearer',
+    customChatPath: '/chat/completions',
+    customModelsPath: '/models',
   },
   wallpaper: null,             // CSS background value
   editingCharId: null,
@@ -85,6 +89,41 @@ const WALLPAPERS = [
   { label: 'Forest',  value: 'linear-gradient(160deg, #134e5e 0%, #71b280 100%)' },
   { label: 'Sakura',  value: 'linear-gradient(160deg, #ffecd2 0%, #fcb69f 50%, #f8b4c8 100%)' },
 ];
+
+function trimTrailingSlash(str) {
+  return (str || '').replace(/\/+$/, '');
+}
+
+function joinUrl(base, path) {
+  if (!path) return trimTrailingSlash(base);
+  if (/^https?:\/\//i.test(path)) return path;
+  const safeBase = trimTrailingSlash(base);
+  if (!safeBase) return path;
+  if (safeBase.endsWith(path)) return safeBase;
+  return safeBase + (path.startsWith('/') ? path : '/' + path);
+}
+
+function getProviderConfig() {
+  if (state.settings.provider !== 'custom') {
+    return PROVIDERS[state.settings.provider] || PROVIDERS.anthropic;
+  }
+
+  return {
+    label: 'Custom',
+    baseUrl: trimTrailingSlash(state.settings.baseUrl || ''),
+    chatPath: state.settings.customChatPath || '/chat/completions',
+    modelsPath: state.settings.customModelsPath || '/models',
+    format: state.settings.customFormat || 'openai',
+    auth: state.settings.customAuth || 'bearer',
+    defaultModels: [],
+  };
+}
+
+function buildAuthHeaders(authMode, apiKey) {
+  if (!apiKey || authMode === 'none') return {};
+  if (authMode === 'x-api-key') return { 'x-api-key': apiKey };
+  return { 'Authorization': `Bearer ${apiKey}` };
+}
 
 // ============================================================
 // Persistence
@@ -554,11 +593,8 @@ async function diagnoseNetworkError() {
   }
 
   const { provider } = state.settings;
-  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
-  const baseUrl = provider === 'custom'
-    ? (state.settings.baseUrl || '').replace(/\/$/, '')
-    : provDef.baseUrl;
-  const testUrl = baseUrl + (provDef.chatPath || '');
+  const provDef = getProviderConfig();
+  const testUrl = joinUrl(provDef.baseUrl, provDef.chatPath || '');
 
   try {
     const resp = await fetch(testUrl, {
@@ -569,7 +605,7 @@ async function diagnoseNetworkError() {
     });
 
     if (resp.ok) {
-      return `Connection reached ${provDef.label}, so hosting is not the issue.\n\nThis page is already running from ${location.origin}. The remaining causes are usually:\n- a browser extension/privacy blocker\n- a bad custom base URL\n- provider/browser rejection before the real response is returned\n\nTry a hard refresh, disable blockers for this site, and use the official provider URL in Studio.`;
+      return `Connection reached ${provDef.label}, so hosting is not the issue.\n\nThis page is already running from ${location.origin}. The remaining causes are usually:\n- a browser extension/privacy blocker\n- a bad custom base URL or path\n- the provider using a different auth/header format\n- provider/browser rejection before the real response is returned\n\nTry the official provider base URL, check Chat Path/Auth settings in Studio, and disable blockers for this site.`;
     }
   } catch (diagnosticErr) {
     console.warn('diagnoseNetworkError failed', diagnosticErr);
@@ -581,11 +617,9 @@ async function diagnoseNetworkError() {
 async function callAPI(charId) {
   const char = state.characters.find(c => c.id === charId);
   const history = state.conversations[charId] || [];
-  const { provider, apiKey, model } = state.settings;
-  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
-  const baseUrl = provider === 'custom'
-    ? (state.settings.baseUrl || '').replace(/\/$/, '')
-    : provDef.baseUrl;
+  const { apiKey, model } = state.settings;
+  const provDef = getProviderConfig();
+  const baseUrl = provDef.baseUrl;
 
   // Build system prompt
   const worldText = state.worldBook
@@ -616,18 +650,18 @@ async function callAPI(charId) {
   }));
 
   if (provDef.format === 'anthropic') {
-    return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory);
+    return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
   } else {
-    return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef.chatPath);
+    return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
   }
 }
 
-async function callAnthropic(baseUrl, apiKey, model, system, messages) {
-  const resp = await fetch(`${baseUrl}/v1/messages`, {
+async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic) {
+  const resp = await fetch(joinUrl(baseUrl, provDef.chatPath || '/v1/messages'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      ...buildAuthHeaders(provDef.auth || 'x-api-key', apiKey),
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
@@ -641,8 +675,8 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages) {
   return data.content?.[0]?.text || '';
 }
 
-async function callOpenAICompat(baseUrl, apiKey, model, system, messages, chatPath) {
-  const url = baseUrl + chatPath;
+async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.openai) {
+  const url = joinUrl(baseUrl, provDef.chatPath || '/chat/completions');
   const openAIMessages = [
     { role: 'system', content: system },
     ...messages,
@@ -651,7 +685,7 @@ async function callOpenAICompat(baseUrl, apiKey, model, system, messages, chatPa
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      ...buildAuthHeaders(provDef.auth || 'bearer', apiKey),
     },
     body: JSON.stringify({ model, max_tokens: 1024, messages: openAIMessages }),
   });
@@ -668,13 +702,11 @@ async function callOpenAICompat(baseUrl, apiKey, model, system, messages, chatPa
 // ============================================================
 
 async function fetchModels() {
-  const { provider, apiKey } = state.settings;
+  const { apiKey } = state.settings;
   if (!apiKey) { showToast('Enter your API key first'); return; }
 
-  const provDef = PROVIDERS[provider] || PROVIDERS.anthropic;
-  const baseUrl = provider === 'custom'
-    ? (state.settings.baseUrl || '').replace(/\/$/, '')
-    : provDef.baseUrl;
+  const provDef = getProviderConfig();
+  const baseUrl = provDef.baseUrl;
 
   const statusEl = document.getElementById('fetchModelsStatus');
   if (statusEl) statusEl.textContent = '…';
@@ -682,9 +714,9 @@ async function fetchModels() {
   try {
     let models = [];
     if (provDef.format === 'anthropic') {
-      const resp = await fetch(`${baseUrl}/v1/models`, {
+      const resp = await fetch(joinUrl(baseUrl, provDef.modelsPath || '/v1/models'), {
         headers: {
-          'x-api-key': apiKey,
+          ...buildAuthHeaders(provDef.auth || 'x-api-key', apiKey),
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
@@ -693,8 +725,8 @@ async function fetchModels() {
       const data = await resp.json();
       models = (data.data || []).map(m => m.id);
     } else {
-      const resp = await fetch(`${baseUrl}/models`, {
-        headers: { 'Authorization': `Bearer ${apiKey}` },
+      const resp = await fetch(joinUrl(baseUrl, provDef.modelsPath || '/models'), {
+        headers: buildAuthHeaders(provDef.auth || 'bearer', apiKey),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
@@ -732,6 +764,16 @@ function renderSettings() {
   if (provEl) provEl.value = s.provider || 'anthropic';
   document.getElementById('settingsApiKey').value = s.apiKey || '';
   document.getElementById('settingsUserName').value = s.userName || '';
+  const customModelEl = document.getElementById('settingsCustomModel');
+  if (customModelEl) customModelEl.value = s.model || '';
+  const formatEl = document.getElementById('settingsCustomFormat');
+  if (formatEl) formatEl.value = s.customFormat || 'openai';
+  const authEl = document.getElementById('settingsCustomAuth');
+  if (authEl) authEl.value = s.customAuth || 'bearer';
+  const chatPathEl = document.getElementById('settingsCustomChatPath');
+  if (chatPathEl) chatPathEl.value = s.customChatPath || '/chat/completions';
+  const modelsPathEl = document.getElementById('settingsCustomModelsPath');
+  if (modelsPathEl) modelsPathEl.value = s.customModelsPath || '/models';
   const memoryEl = document.getElementById('settingsMemoryNote');
   if (memoryEl) memoryEl.value = s.memoryNote || '';
   renderModelSelect();
@@ -741,12 +783,14 @@ function renderSettings() {
 function renderModelSelect() {
   const select = document.getElementById('settingsModel');
   if (!select) return;
-  const provDef = PROVIDERS[state.settings.provider] || PROVIDERS.anthropic;
+  const provDef = getProviderConfig();
   const models = provDef.defaultModels;
 
   // Keep existing options if they were fetched, just ensure current model is there
   const existing = Array.from(select.options).map(o => o.value);
-  if (!existing.length || !existing.includes(state.settings.model)) {
+  if (state.settings.provider === 'custom' && state.settings.model && !existing.includes(state.settings.model)) {
+    select.innerHTML = `<option value="${escHtml(state.settings.model)}">${escHtml(state.settings.model)}</option>`;
+  } else if (!existing.length || !existing.includes(state.settings.model)) {
     select.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
   }
   if (state.settings.model) {
@@ -764,6 +808,10 @@ function onProviderChange(doSave = true) {
 
   const rowBaseUrl = document.getElementById('rowBaseUrl');
   if (rowBaseUrl) rowBaseUrl.style.display = provider === 'custom' ? '' : 'none';
+  const customGroup = document.getElementById('customProviderGroup');
+  if (customGroup) customGroup.style.display = provider === 'custom' ? '' : 'none';
+  const customModelRow = document.getElementById('customModelRow');
+  if (customModelRow) customModelRow.style.display = provider === 'custom' ? '' : 'none';
 
   const baseUrlInput = document.getElementById('settingsBaseUrl');
   if (baseUrlInput) {
@@ -784,9 +832,15 @@ function saveSettings() {
   state.settings.provider  = document.getElementById('settingsProvider')?.value || state.settings.provider;
   state.settings.baseUrl   = document.getElementById('settingsBaseUrl')?.value?.trim() || '';
   state.settings.apiKey    = document.getElementById('settingsApiKey')?.value?.trim() || '';
-  state.settings.model     = document.getElementById('settingsModel')?.value || state.settings.model;
+  state.settings.model     = state.settings.provider === 'custom'
+    ? (document.getElementById('settingsCustomModel')?.value?.trim() || state.settings.model)
+    : (document.getElementById('settingsModel')?.value || state.settings.model);
   state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
   state.settings.memoryNote = document.getElementById('settingsMemoryNote')?.value?.trim() || '';
+  state.settings.customFormat = document.getElementById('settingsCustomFormat')?.value || state.settings.customFormat;
+  state.settings.customAuth = document.getElementById('settingsCustomAuth')?.value || state.settings.customAuth;
+  state.settings.customChatPath = document.getElementById('settingsCustomChatPath')?.value?.trim() || '/chat/completions';
+  state.settings.customModelsPath = document.getElementById('settingsCustomModelsPath')?.value?.trim() || '/models';
   saveState();
 }
 
