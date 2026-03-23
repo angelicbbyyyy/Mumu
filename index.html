@@ -46,6 +46,15 @@
     <path d="M32 13.4l2.2 5.75 5.52-1.44-1.44 5.52L44 25.4l-4.33 3.67 3.18 4.73-5.67.53.37 5.69-5.55-1.31L29.82 44l-2.18-5.29-5.55 1.31.37-5.69-5.67-.53 3.18-4.73L15.64 25.4l5.72-2.13-1.44-5.52 5.52 1.44L32 13.4z" fill="none" stroke="#858A95" stroke-width="2.1" stroke-linejoin="round"/>
     <circle cx="32" cy="32" r="2.8" fill="#858A95"/>
   </symbol>
+
+  <symbol id="icon-wallet-svg" viewBox="0 0 64 64">
+    <rect x="8" y="15" width="48" height="34" rx="9" fill="#101114"/>
+    <rect x="8" y="21" width="48" height="28" rx="9" fill="#1F2025"/>
+    <rect x="12" y="25" width="40" height="20" rx="7" fill="#2C2F36"/>
+    <rect x="40" y="31" width="10" height="8" rx="4" fill="#F6C446"/>
+    <circle cx="44.5" cy="35" r="1.4" fill="#1F2025"/>
+    <path d="M16 19.5h24" stroke="#5A5F6B" stroke-width="2.4" stroke-linecap="round"/>
+  </symbol>
 </svg>
 
 <div class="iphone" id="iphone">
@@ -112,6 +121,13 @@
             <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-worldbook-svg"></use></svg>
           </div>
           <span class="icon-label">World Book</span>
+        </div>
+
+        <div class="app-icon" onclick="openApp('wallet')">
+          <div class="icon-wrap icon-wallet">
+            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-wallet-svg"></use></svg>
+          </div>
+          <span class="icon-label">Wallet</span>
         </div>
 
       </div>
@@ -228,6 +244,7 @@
         </div>
 
         <div class="line-messages-area" id="lineMessagesArea"></div>
+        <div class="line-attachment-preview" id="lineAttachmentPreview"></div>
 
         <div class="line-input-bar">
           <!-- Left: +, camera, mic -->
@@ -236,7 +253,7 @@
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
           </button>
-          <button class="line-input-icon-btn">
+          <button class="line-input-icon-btn" type="button" onclick="triggerLineImagePicker()">
             <svg viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
@@ -279,6 +296,78 @@
         <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
       </div>
 
+    </div>
+
+    <!-- ============================================================
+         APP: WALLET
+         ============================================================ -->
+    <div class="app-overlay" id="app-wallet">
+      <div class="app-nav-bar">
+        <button class="app-nav-back" onclick="goHome()">
+          <svg viewBox="0 0 12 20" fill="none" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
+        </button>
+        <span class="app-nav-title">Wallet</span>
+        <div style="width:44px;"></div>
+      </div>
+      <div class="wallet-scroll">
+        <div class="wallet-hero">
+          <div class="wallet-hero-label">Available Balance</div>
+          <div class="wallet-hero-balance" id="walletBalanceDisplay">$0.00</div>
+          <div class="wallet-hero-sub">Apple Cash style starter wallet for your simulator</div>
+        </div>
+
+        <div class="settings-section-label">Cards</div>
+        <div class="settings-group" id="walletCardList"></div>
+
+        <div class="settings-section-label">Add Card</div>
+        <div class="form-section">
+          <div class="form-row">
+            <span class="form-label">Card Name</span>
+            <input class="form-input" id="walletCardLabel" type="text" placeholder="Main Card">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Network</span>
+            <input class="form-input" id="walletCardNetwork" type="text" placeholder="Visa">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Last 4</span>
+            <input class="form-input" id="walletCardLast4" type="text" inputmode="numeric" maxlength="4" placeholder="4242">
+          </div>
+        </div>
+        <div class="modal-actions wallet-actions">
+          <button class="btn btn-primary" onclick="addWalletCard()">Add Card</button>
+        </div>
+
+        <div class="settings-section-label">Add Funds</div>
+        <div class="form-section">
+          <div class="form-row">
+            <span class="form-label">Amount</span>
+            <input class="form-input" id="walletFundAmount" type="number" min="1" step="1" placeholder="25">
+          </div>
+        </div>
+        <div class="modal-actions wallet-actions">
+          <button class="btn btn-primary" onclick="addWalletFunds()">Add Funds</button>
+        </div>
+
+        <div class="settings-section-label">Send To Character</div>
+        <div class="form-section">
+          <div class="form-row">
+            <span class="form-label">Character</span>
+            <select class="settings-select" id="walletTransferCharacter"></select>
+          </div>
+          <div class="form-row">
+            <span class="form-label">Amount</span>
+            <input class="form-input" id="walletTransferAmount" type="number" min="1" step="1" placeholder="10">
+          </div>
+        </div>
+        <div class="modal-actions wallet-actions">
+          <button class="btn btn-primary" onclick="sendWalletFunds()">Send Money</button>
+        </div>
+
+        <div class="settings-section-label">Character Balances</div>
+        <div class="settings-group" id="walletCharacterList"></div>
+      </div>
+      <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
     </div>
 
     <!-- ============================================================
@@ -593,6 +682,7 @@
     <input type="file" id="studioImportInput" accept="application/json,.json" style="display:none" onchange="handleImportStudioData(event)">
     <input type="file" id="charAvatarInput" accept="image/*" style="display:none" onchange="handleCharacterAvatarChange(event)">
     <input type="file" id="wallpaperImageInput" accept="image/*" style="display:none" onchange="handleWallpaperImageChange(event)">
+    <input type="file" id="lineImageInput" accept="image/*" style="display:none" onchange="handleLineImageChange(event)">
 
     <div class="modal-overlay" id="voomModal" onclick="closeVoomComposer(event)">
       <div class="modal-sheet">

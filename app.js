@@ -14,6 +14,7 @@ const state = {
   lineTab: 'chats',
   characters: [],
   conversations: {},           // { charId: [{role, content, ts, read}] }
+  pendingLineAttachments: [],
   worldBook: [],
   voomPosts: [],
   persona: {
@@ -31,6 +32,12 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
+  },
+  wallet: {
+    balance: 120,
+    cards: [],
+    characterBalances: {},
+    transactions: [],
   },
   wallpaper: null,             // CSS background value
   editingCharId: null,
@@ -106,6 +113,13 @@ const DEFAULT_SETTINGS = {
   memoryNote: '',
 };
 
+const DEFAULT_WALLET = {
+  balance: 120,
+  cards: [],
+  characterBalances: {},
+  transactions: [],
+};
+
 function parseTagList(raw) {
   if (Array.isArray(raw)) {
     return raw.map(tag => String(tag).trim()).filter(Boolean);
@@ -145,6 +159,54 @@ function normalizeWorldBookEntry(raw = {}) {
     priority: Number.isFinite(Number(raw.priority)) ? Number(raw.priority) : 50,
     scope: raw.scope === 'always' ? 'always' : 'conditional',
     enabled: raw.enabled !== false,
+  };
+}
+
+function normalizeMessageAttachment(raw = {}) {
+  return {
+    type: raw.type === 'image' ? 'image' : 'image',
+    url: raw.url || '',
+    mimeType: raw.mimeType || 'image/jpeg',
+    name: raw.name || 'image',
+  };
+}
+
+function normalizeConversationMessage(raw = {}) {
+  return {
+    role: raw.role === 'assistant' ? 'assistant' : 'user',
+    content: raw.content || '',
+    ts: raw.ts || Date.now(),
+    read: raw.read === true,
+    attachments: Array.isArray(raw.attachments) ? raw.attachments.map(normalizeMessageAttachment).filter(att => att.url) : [],
+  };
+}
+
+function normalizeConversations(raw = {}) {
+  const normalized = {};
+  Object.entries(raw || {}).forEach(([key, messages]) => {
+    normalized[key] = Array.isArray(messages) ? messages.map(normalizeConversationMessage) : [];
+  });
+  return normalized;
+}
+
+function normalizeWallet(raw = {}) {
+  return {
+    balance: Number(raw.balance) || 0,
+    cards: Array.isArray(raw.cards) ? raw.cards.map(card => ({
+      id: card.id || uuid(),
+      label: card.label || 'Card',
+      network: card.network || 'Visa',
+      last4: String(card.last4 || '').slice(-4) || '0000',
+    })) : [],
+    characterBalances: raw.characterBalances && typeof raw.characterBalances === 'object' ? raw.characterBalances : {},
+    transactions: Array.isArray(raw.transactions) ? raw.transactions.map(tx => ({
+      id: tx.id || uuid(),
+      type: tx.type || 'fund',
+      amount: Number(tx.amount) || 0,
+      charId: tx.charId || '',
+      ts: tx.ts || Date.now(),
+      note: tx.note || '',
+    })) : [],
   };
 }
 
@@ -255,6 +317,7 @@ function saveState() {
       voomPosts: state.voomPosts,
       persona: state.persona,
       settings: state.settings,
+      wallet: state.wallet,
       wallpaper: state.wallpaper,
     }));
   } catch (e) { console.warn('saveState failed', e); }
@@ -266,11 +329,12 @@ function loadState() {
     if (!raw) return;
     const s = JSON.parse(raw);
     if (s.characters)    state.characters    = s.characters.map(normalizeCharacter);
-    if (s.conversations) state.conversations = s.conversations;
+    if (s.conversations) state.conversations = normalizeConversations(s.conversations);
     if (s.worldBook)     state.worldBook     = s.worldBook.map(normalizeWorldBookEntry);
     if (s.voomPosts)     state.voomPosts     = s.voomPosts;
     if (s.persona)       Object.assign(state.persona, DEFAULT_PERSONA, s.persona);
     if (s.settings)      Object.assign(state.settings, DEFAULT_SETTINGS, s.settings);
+    if (s.wallet)        state.wallet = normalizeWallet(s.wallet);
     if (s.wallpaper)     state.wallpaper     = s.wallpaper;
   } catch (e) { console.warn('loadState failed', e); }
 }
@@ -493,6 +557,7 @@ function openApp(name) {
   if (name === 'contacts') renderContactsList();
   if (name === 'worldbook') renderWorldBook();
   if (name === 'settings') renderSettings();
+  if (name === 'wallet') renderWallet();
 }
 
 function goHome() {
@@ -593,7 +658,7 @@ function renderLINEConvList(filter = '') {
   container.innerHTML = sorted.map(char => {
     const last = lastMsg(char.id);
     const preview = last
-      ? (last.role === 'user' ? 'You: ' : '') + last.content.slice(0, 50)
+      ? `${last.role === 'user' ? 'You: ' : ''}${last.content ? last.content.slice(0, 50) : (last.attachments?.length ? 'Photo' : '')}`
       : 'Tap to chat';
     const timeStr = last ? formatShortTime(last.ts) : '';
     return `
@@ -640,6 +705,7 @@ function openLINEChat(charId) {
   if (!char) return;
 
   state.activeChat = charId;
+  state.pendingLineAttachments = [];
 
   document.getElementById('lineChatName').textContent = char.name;
   document.getElementById('lineChatSub').textContent = char.description ? `📍 ${char.description}` : '📍 Mobile';
@@ -650,16 +716,19 @@ function openLINEChat(charId) {
   home.classList.add('hidden');
 
   renderLINEMessages();
+  renderLineAttachmentPreview();
   setTimeout(() => document.getElementById('lineInput').focus(), 350);
 }
 
 function closeLINEChat(silent = false) {
   state.activeChat = null;
+  state.pendingLineAttachments = [];
   document.getElementById('lineChat').classList.remove('open');
   document.getElementById('lineHome').classList.remove('hidden');
   const input = document.getElementById('lineInput');
   input.value = '';
   input.style.height = 'auto';
+  renderLineAttachmentPreview();
   updateLineSendBtn();
   if (!silent) renderLINEConvList();
 }
@@ -705,7 +774,7 @@ function renderLINEMessages() {
             <span class="line-time">${escHtml(timeStr)}</span>
           </div>
           <div class="line-bubble-wrap">
-            <div class="line-bubble sent">${escHtml(msg.content)}</div>
+            <div class="line-bubble sent">${renderMessageInner(msg)}</div>
           </div>
         </div>`;
     } else {
@@ -716,7 +785,7 @@ function renderLINEMessages() {
             ? avatarMarkup(char?.avatar, 'line-msg-avatar')
             : `<div class="line-msg-avatar-spacer"></div>`}
           <div class="line-bubble-wrap">
-            <div class="line-bubble received">${escHtml(msg.content)}</div>
+            <div class="line-bubble received">${renderMessageInner(msg)}</div>
             <div class="line-msg-meta">
               <span class="line-time">${escHtml(timeStr)}</span>
             </div>
@@ -733,10 +802,20 @@ function appendMsg(role, content) {
   if (!state.conversations[state.activeChat]) {
     state.conversations[state.activeChat] = [];
   }
-  const msg = { role, content, ts: Date.now(), read: false };
+  const msg = normalizeConversationMessage({ role, content, ts: Date.now(), read: false });
   state.conversations[state.activeChat].push(msg);
   saveState();
   return msg;
+}
+
+function renderMessageInner(msg) {
+  const attachments = msg.attachments || [];
+  const images = attachments
+    .filter(att => att.type === 'image' && att.url)
+    .map(att => `<img class="line-msg-image" src="${escHtml(att.url)}" alt="${escHtml(att.name || 'Photo')}">`)
+    .join('');
+  const text = msg.content ? `<div class="line-msg-text">${escHtml(msg.content)}</div>` : '';
+  return `${images}${text}`;
 }
 
 function markLastUserMsgRead() {
@@ -784,7 +863,8 @@ async function sendLineMessage() {
 
   const input = document.getElementById('lineInput');
   const text = input.value.trim();
-  if (!text) return;
+  const attachments = [...state.pendingLineAttachments];
+  if (!text && !attachments.length) return;
 
   if (!state.settings.apiKey) {
     showToast('Add your API key in Settings first');
@@ -797,9 +877,13 @@ async function sendLineMessage() {
   isSending = true;
   input.value = '';
   input.style.height = 'auto';
+  state.pendingLineAttachments = [];
+  renderLineAttachmentPreview();
   updateLineSendBtn();
 
-  appendMsg('user', text);
+  const outgoing = appendMsg('user', text);
+  outgoing.attachments = attachments.map(normalizeMessageAttachment);
+  saveState();
   renderLINEMessages();
   showTypingIndicator();
   document.getElementById('lineMessagesArea').scrollTop = 99999;
@@ -829,7 +913,57 @@ function handleLineInputKeydown(e) {
 function updateLineSendBtn() {
   const input = document.getElementById('lineInput');
   const btn = document.getElementById('lineSendBtn');
-  btn.disabled = !input?.value.trim() || isSending;
+  btn.disabled = (!input?.value.trim() && !state.pendingLineAttachments.length) || isSending;
+}
+
+function triggerLineImagePicker() {
+  document.getElementById('lineImageInput')?.click();
+}
+
+function handleLineImageChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.pendingLineAttachments = [{
+      type: 'image',
+      url: String(reader.result || ''),
+      mimeType: file.type || 'image/jpeg',
+      name: file.name || 'photo',
+    }];
+    renderLineAttachmentPreview();
+    updateLineSendBtn();
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPendingLineAttachment() {
+  state.pendingLineAttachments = [];
+  renderLineAttachmentPreview();
+  updateLineSendBtn();
+}
+
+function renderLineAttachmentPreview() {
+  const preview = document.getElementById('lineAttachmentPreview');
+  if (!preview) return;
+  if (!state.pendingLineAttachments.length) {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+    return;
+  }
+  const image = state.pendingLineAttachments[0];
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <div class="line-attachment-card">
+      <img class="line-attachment-thumb" src="${escHtml(image.url)}" alt="${escHtml(image.name || 'Photo')}">
+      <div class="line-attachment-meta">
+        <div class="line-attachment-title">${escHtml(image.name || 'Photo')}</div>
+        <div class="line-attachment-sub">Will be sent with your next message</div>
+      </div>
+      <button class="line-attachment-remove" type="button" onclick="clearPendingLineAttachment()">✕</button>
+    </div>
+  `;
 }
 
 // ============================================================
@@ -895,17 +1029,58 @@ async function callAPI(charId) {
   const baseUrl = provDef.baseUrl;
   const systemPrompt = buildPromptBundle(char, history);
 
-  // History for API (only role + content)
-  const apiHistory = history.map(m => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: m.content,
-  }));
+  const apiHistory = history.map(normalizeConversationMessage);
 
   if (provDef.format === 'anthropic') {
     return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
   } else {
     return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
   }
+}
+
+function parseDataUrlImage(url) {
+  const match = String(url || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    mediaType: match[1],
+    data: match[2],
+  };
+}
+
+function buildOpenAIMessageContent(message) {
+  const blocks = [];
+  if (message.content) blocks.push({ type: 'text', text: message.content });
+  (message.attachments || []).forEach(att => {
+    if (att.type === 'image' && att.url) {
+      blocks.push({
+        type: 'image_url',
+        image_url: { url: att.url },
+      });
+    }
+  });
+  if (!blocks.length) return message.content || '';
+  if (!message.attachments?.length) return message.content || '';
+  return blocks;
+}
+
+function buildAnthropicMessageContent(message) {
+  const blocks = [];
+  (message.attachments || []).forEach(att => {
+    if (att.type !== 'image' || !att.url) return;
+    const parsed = parseDataUrlImage(att.url);
+    if (!parsed) return;
+    blocks.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: parsed.mediaType,
+        data: parsed.data,
+      },
+    });
+  });
+  if (message.content) blocks.push({ type: 'text', text: message.content });
+  if (!blocks.length) return message.content || '';
+  return blocks;
 }
 
 function selectRelevantWorldBookEntries(history, char) {
@@ -994,7 +1169,15 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef =
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({ model, max_tokens: 1024, system, messages }),
+    body: JSON.stringify({
+      model,
+      max_tokens: 1024,
+      system,
+      messages: messages.map(message => ({
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: buildAnthropicMessageContent(message),
+      })),
+    }),
   }, provDef);
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
@@ -1008,7 +1191,10 @@ async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDe
   const url = joinUrl(baseUrl, provDef.chatPath || '/chat/completions', provDef.chatPath || '/chat/completions');
   const openAIMessages = [
     { role: 'system', content: system },
-    ...messages,
+    ...messages.map(message => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: buildOpenAIMessageContent(message),
+    })),
   ];
   const resp = await requestJson(url, {
     method: 'POST',
@@ -1163,6 +1349,120 @@ function saveSettings() {
   saveState();
 }
 
+function ensureWalletCharacterBalance(charId) {
+  if (!state.wallet.characterBalances[charId]) {
+    state.wallet.characterBalances[charId] = 0;
+  }
+}
+
+function formatCurrency(amount) {
+  return `$${(Number(amount) || 0).toFixed(2)}`;
+}
+
+function renderWallet() {
+  state.wallet = normalizeWallet(state.wallet);
+  state.characters.forEach(char => ensureWalletCharacterBalance(char.id));
+
+  const balanceEl = document.getElementById('walletBalanceDisplay');
+  if (balanceEl) balanceEl.textContent = formatCurrency(state.wallet.balance);
+
+  const cardList = document.getElementById('walletCardList');
+  if (cardList) {
+    if (!state.wallet.cards.length) {
+      cardList.innerHTML = `<div class="settings-row"><div class="settings-row-label">No cards yet</div></div>`;
+    } else {
+      cardList.innerHTML = state.wallet.cards.map(card => `
+        <div class="settings-row">
+          <div class="settings-row-icon" style="background:#eef4ff;">💳</div>
+          <div class="settings-row-label">${escHtml(card.label)}</div>
+          <div class="settings-row-value">${escHtml(card.network)} •••• ${escHtml(card.last4)}</div>
+        </div>
+      `).join('');
+    }
+  }
+
+  const charSelect = document.getElementById('walletTransferCharacter');
+  if (charSelect) {
+    charSelect.innerHTML = state.characters.length
+      ? state.characters.map(char => `<option value="${escHtml(char.id)}">${escHtml(char.name)}</option>`).join('')
+      : '<option value="">No characters</option>';
+  }
+
+  const charList = document.getElementById('walletCharacterList');
+  if (charList) {
+    if (!state.characters.length) {
+      charList.innerHTML = `<div class="settings-row"><div class="settings-row-label">Add characters first</div></div>`;
+    } else {
+      charList.innerHTML = state.characters.map(char => `
+        <div class="settings-row">
+          <div class="settings-row-icon wallet-char-avatar" style="background:#f5f7fb;">${isImageSource(char.avatar) ? `<img class="avatar-image" src="${escHtml(char.avatar)}" alt="${escHtml(char.name)}">` : escHtml(char.avatar || '🤖')}</div>
+          <div class="settings-row-label">${escHtml(char.name)}</div>
+          <div class="settings-row-value">${formatCurrency(state.wallet.characterBalances[char.id] || 0)}</div>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+function addWalletCard() {
+  const label = document.getElementById('walletCardLabel')?.value.trim() || 'Card';
+  const network = document.getElementById('walletCardNetwork')?.value.trim() || 'Visa';
+  const last4Raw = document.getElementById('walletCardLast4')?.value.trim() || '';
+  const last4 = last4Raw.replace(/\D/g, '').slice(-4);
+  if (last4.length !== 4) {
+    showToast('Enter the last 4 digits');
+    return;
+  }
+
+  state.wallet.cards.push({ id: uuid(), label, network, last4 });
+  document.getElementById('walletCardLabel').value = '';
+  document.getElementById('walletCardNetwork').value = '';
+  document.getElementById('walletCardLast4').value = '';
+  saveState();
+  renderWallet();
+  showToast('Card added');
+}
+
+function addWalletFunds() {
+  const amount = Number(document.getElementById('walletFundAmount')?.value || 0);
+  if (amount <= 0) {
+    showToast('Enter a fund amount');
+    return;
+  }
+  state.wallet.balance += amount;
+  state.wallet.transactions.unshift({ id: uuid(), type: 'fund', amount, ts: Date.now(), note: 'Added funds' });
+  document.getElementById('walletFundAmount').value = '';
+  saveState();
+  renderWallet();
+  showToast('Funds added');
+}
+
+function sendWalletFunds() {
+  const charId = document.getElementById('walletTransferCharacter')?.value;
+  const amount = Number(document.getElementById('walletTransferAmount')?.value || 0);
+  if (!charId) {
+    showToast('Choose a character');
+    return;
+  }
+  if (amount <= 0) {
+    showToast('Enter an amount');
+    return;
+  }
+  if (state.wallet.balance < amount) {
+    showToast('Not enough balance');
+    return;
+  }
+
+  ensureWalletCharacterBalance(charId);
+  state.wallet.balance -= amount;
+  state.wallet.characterBalances[charId] += amount;
+  state.wallet.transactions.unshift({ id: uuid(), type: 'transfer', amount, charId, ts: Date.now(), note: 'Sent to character' });
+  document.getElementById('walletTransferAmount').value = '';
+  saveState();
+  renderWallet();
+  showToast('Money sent');
+}
+
 function renderPersona() {
   document.getElementById('personaUserAlias').value = state.persona.userAlias || '';
   document.getElementById('personaCoreVibe').value = state.persona.coreVibe || '';
@@ -1202,6 +1502,7 @@ function buildStudioSnapshot() {
       voomPosts: state.voomPosts,
       persona: state.persona,
       settings: state.settings,
+      wallet: state.wallet,
       wallpaper: state.wallpaper,
     },
   };
@@ -1241,11 +1542,12 @@ function applyImportedStudioData(payload) {
   }
 
   state.characters = Array.isArray(imported.characters) ? imported.characters.map(normalizeCharacter) : [];
-  state.conversations = imported.conversations && typeof imported.conversations === 'object' ? imported.conversations : {};
+  state.conversations = imported.conversations && typeof imported.conversations === 'object' ? normalizeConversations(imported.conversations) : {};
   state.worldBook = Array.isArray(imported.worldBook) ? imported.worldBook.map(normalizeWorldBookEntry) : [];
   state.voomPosts = Array.isArray(imported.voomPosts) ? imported.voomPosts : [];
   state.persona = { ...DEFAULT_PERSONA, ...(imported.persona || {}) };
   state.settings = { ...DEFAULT_SETTINGS, ...(imported.settings || {}) };
+  state.wallet = normalizeWallet(imported.wallet || DEFAULT_WALLET);
   state.wallpaper = imported.wallpaper || WALLPAPERS[0].value;
 
   state.currentApp = null;
@@ -1260,6 +1562,7 @@ function applyImportedStudioData(payload) {
   renderWorldBook();
   renderPersona();
   renderSettings();
+  renderWallet();
   closeLINEChat(true);
   goHome();
 }
@@ -1438,14 +1741,17 @@ function saveCharacter() {
   if (state.editingCharId) {
     const char = state.characters.find(c => c.id === state.editingCharId);
     if (char) Object.assign(char, payload);
+    ensureWalletCharacterBalance(state.editingCharId);
   } else {
     state.characters.push(payload);
+    ensureWalletCharacterBalance(payload.id);
   }
 
   saveState();
   document.getElementById('charModal').classList.remove('open');
   renderContactsList();
   if (state.currentApp === 'messages') renderLINEConvList();
+  if (state.currentApp === 'wallet') renderWallet();
   showToast(state.editingCharId ? 'Character updated' : 'Character added');
 }
 
@@ -1455,12 +1761,14 @@ function deleteCharacter() {
 
   state.characters = state.characters.filter(c => c.id !== state.editingCharId);
   delete state.conversations[state.editingCharId];
+  delete state.wallet.characterBalances[state.editingCharId];
 
   saveState();
   document.getElementById('charModal').classList.remove('open');
   if (state.activeChat === state.editingCharId) closeLINEChat(true);
   renderContactsList();
   if (state.currentApp === 'messages') renderLINEConvList();
+  if (state.currentApp === 'wallet') renderWallet();
   showToast('Character deleted');
 }
 
@@ -1829,6 +2137,14 @@ function seedIfEmpty() {
     saveState();
   }
   if (!state.persona.userAlias) state.persona.userAlias = state.settings.userName || 'You';
+  state.characters.forEach(char => ensureWalletCharacterBalance(char.id));
+  if (!state.wallet.cards.length) {
+    state.wallet.cards.push({ id: uuid(), label: 'Apple Cash', network: 'Visa', last4: '4242' });
+  }
+  if (!state.wallet.transactions.length) {
+    state.wallet.transactions.push({ id: uuid(), type: 'fund', amount: state.wallet.balance, ts: Date.now(), note: 'Starter balance' });
+  }
+  saveState();
 }
 
 // ============================================================
