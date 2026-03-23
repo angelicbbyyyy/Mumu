@@ -264,16 +264,6 @@ function goHome() {
   // Also close LINE chat if open
   closeLINEChat(true);
   state.currentApp = null;
-  renderHomeFocus();
-}
-
-function renderHomeFocus() {
-  const personaName = document.getElementById('homePersonaName');
-  const charCount = document.getElementById('homeCharacterCount');
-  const worldCount = document.getElementById('homeWorldCount');
-  if (personaName) personaName.textContent = state.persona.userAlias || 'Default';
-  if (charCount) charCount.textContent = String(state.characters.length);
-  if (worldCount) worldCount.textContent = String(state.worldBook.length);
 }
 
 // ============================================================
@@ -783,7 +773,6 @@ function savePersona() {
   state.persona.scenario = document.getElementById('personaScenario')?.value?.trim() || '';
   state.persona.boundaries = document.getElementById('personaBoundaries')?.value?.trim() || '';
   saveState();
-  renderHomeFocus();
 }
 
 function clearAllChats() {
@@ -896,7 +885,6 @@ function saveCharacter() {
   }
 
   saveState();
-  renderHomeFocus();
   document.getElementById('charModal').classList.remove('open');
   renderContactsList();
   if (state.currentApp === 'messages') renderLINEConvList();
@@ -911,7 +899,6 @@ function deleteCharacter() {
   delete state.conversations[state.editingCharId];
 
   saveState();
-  renderHomeFocus();
   document.getElementById('charModal').classList.remove('open');
   if (state.activeChat === state.editingCharId) closeLINEChat(true);
   renderContactsList();
@@ -981,7 +968,6 @@ function renderWorldBook() {
 function addWorldBookEntry() {
   state.worldBook.push({ id: uuid(), title: 'New Entry', content: '' });
   saveState();
-  renderHomeFocus();
   renderWorldBook();
   setTimeout(() => {
     const inputs = document.querySelectorAll('.worldbook-entry-title-input');
@@ -1002,7 +988,6 @@ function updateWBContent(id, val) {
 function deleteWBEntry(id) {
   state.worldBook = state.worldBook.filter(x => x.id !== id);
   saveState();
-  renderHomeFocus();
   renderWorldBook();
 }
 
@@ -1037,7 +1022,6 @@ function init() {
 
   // Apply wallpaper
   applyWallpaper(state.wallpaper || WALLPAPERS[0].value);
-  renderHomeFocus();
 
   // Show file:// warning in Settings if needed
   if (location.protocol === 'file:') {

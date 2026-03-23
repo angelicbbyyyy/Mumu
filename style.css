@@ -190,78 +190,6 @@ body {
   z-index: 1;
 }
 
-.home-focus-card {
-  margin: 6px 16px 0;
-  padding: 16px;
-  border-radius: 26px;
-  background: rgba(12, 18, 34, 0.38);
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 16px 36px rgba(0,0,0,0.2);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  color: white;
-  position: relative;
-  z-index: 1;
-  cursor: pointer;
-}
-
-.home-focus-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.home-focus-kicker {
-  font-size: 11px;
-  letter-spacing: 0.9px;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.78);
-}
-
-.home-focus-pill {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.92);
-}
-
-.home-focus-title {
-  font-size: 19px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.3px;
-  margin-bottom: 14px;
-}
-
-.home-focus-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.focus-stat {
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: rgba(255,255,255,0.08);
-}
-
-.focus-stat-label {
-  display: block;
-  font-size: 11px;
-  color: rgba(255,255,255,0.68);
-  margin-bottom: 6px;
-}
-
-.focus-stat strong {
-  display: block;
-  font-size: 15px;
-  font-weight: 700;
-}
-
 .app-icon {
   display: flex;
   flex-direction: column;
@@ -487,43 +415,6 @@ body {
 
 .app-search-bar input::placeholder {
   color: var(--ios-gray);
-}
-
-.app-intro-card {
-  margin: 14px 16px 10px;
-  padding: 16px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.84));
-  border: 1px solid rgba(255,255,255,0.7);
-  box-shadow: 0 10px 26px rgba(15,23,42,0.07);
-}
-
-.app-intro-card.compact {
-  padding-top: 14px;
-  padding-bottom: 14px;
-}
-
-.app-intro-kicker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: #6c7483;
-  margin-bottom: 6px;
-}
-
-.app-intro-title {
-  font-size: 18px;
-  line-height: 1.25;
-  font-weight: 700;
-  color: #13161f;
-  margin-bottom: 6px;
-}
-
-.app-intro-sub {
-  font-size: 13px;
-  line-height: 1.45;
-  color: #5f6674;
 }
 
 /* Home bar at bottom of apps */
