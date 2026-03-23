@@ -490,9 +490,7 @@ async function sendLineMessage() {
     renderLINEMessages();
   } catch (err) {
     removeTypingIndicator();
-    const errMsg = err.message || 'Something went wrong';
-    showToast('Error: ' + errMsg.slice(0, 60));
-    console.error('API error:', err);
+    showApiError(err);
   }
 
   isSending = false;
@@ -515,6 +513,24 @@ function updateLineSendBtn() {
 // ============================================================
 // Multi-Provider API Call
 // ============================================================
+
+function showApiError(err) {
+  console.error('API error:', err);
+  const msg = err?.message || '';
+  let friendly;
+  if (err instanceof TypeError || msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
+    friendly = 'Network error — your browser is blocking the request.\n\nFix: open index.html via a local server instead of file://\n\nRun in terminal:\n  npx serve .\nor:\n  python3 -m http.server 8080';
+  } else if (msg.includes('401') || msg.toLowerCase().includes('authentication') || msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('invalid x-api-key')) {
+    friendly = 'Invalid API key. Check your key in Settings.';
+  } else if (msg.includes('403')) {
+    friendly = 'Access denied (403). Your API key may lack permission for this model.';
+  } else if (msg.includes('429')) {
+    friendly = 'Rate limited (429). Please wait a moment and try again.';
+  } else {
+    friendly = msg || 'Something went wrong. Check the console for details.';
+  }
+  alert(friendly);
+}
 
 async function callAPI(charId) {
   const char = state.characters.find(c => c.id === charId);
@@ -646,7 +662,7 @@ async function fetchModels() {
     showToast(`Loaded ${models.length} models`);
   } catch (err) {
     if (statusEl) statusEl.textContent = 'Failed';
-    showToast('Fetch failed: ' + (err.message || 'unknown error'));
+    showApiError(err);
   }
 }
 
@@ -946,6 +962,12 @@ function init() {
 
   // Apply wallpaper
   applyWallpaper(state.wallpaper || WALLPAPERS[0].value);
+
+  // Show file:// warning in Settings if needed
+  if (location.protocol === 'file:') {
+    const el = document.getElementById('fileProtocolWarning');
+    if (el) el.style.display = 'block';
+  }
 
   // Clock
   updateClock();
