@@ -1083,6 +1083,7 @@ function openLINEChat(charId) {
   renderLINEMessages();
   renderLineAttachmentPreview();
   updateLineVoiceNoteButton();
+  updateLineRetryButton();
   maybeSendCharacterOpeningLines(charId);
   setTimeout(() => document.getElementById('lineInput').focus(), 350);
 }
@@ -1098,6 +1099,7 @@ function closeLINEChat(silent = false) {
   input.style.height = 'auto';
   renderLineAttachmentPreview();
   updateLineSendBtn();
+  updateLineRetryButton();
   if (!silent) renderLINEConvList();
 }
 
@@ -1133,6 +1135,7 @@ function renderLINEMessages() {
         <div class="line-chat-empty-avatar">${avatarMarkup(char?.avatar, 'line-conv-avatar')}</div>
         <div style="font-size:15px;color:rgba(0,0,0,0.5);">Start a conversation with <strong>${escHtml(char?.name || 'this character')}</strong></div>
       </div>`;
+    updateLineRetryButton();
     return;
   }
 
@@ -1143,6 +1146,7 @@ function renderLINEMessages() {
 
   area.innerHTML = html;
   scrollLineMessagesToBottom();
+  updateLineRetryButton();
 }
 
 function renderLINEMessageHtml(msg, prevMsg, char, index, total, charId) {
@@ -1598,6 +1602,80 @@ function updateLineVoiceNoteButton() {
   btn.disabled = !state.activeChat || isSending;
   btn.classList.toggle('is-disabled', btn.disabled);
   btn.classList.toggle('is-unconfigured', !configured && !!state.activeChat);
+}
+
+function getRetryContext(charId) {
+  const messages = state.conversations[charId] || [];
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  if (lastUserIndex === -1) return null;
+  return {
+    lastUserIndex,
+    trailingAssistantMessages: messages.slice(lastUserIndex + 1),
+  };
+}
+
+function updateLineRetryButton() {
+  const btn = document.getElementById('lineRetryBtn');
+  if (!btn) return;
+  const retryContext = state.activeChat ? getRetryContext(state.activeChat) : null;
+  btn.disabled = !state.activeChat || isSending || !retryContext;
+  btn.classList.toggle('is-disabled', btn.disabled);
+}
+
+async function retryLastResponse() {
+  if (!state.activeChat || isSending) return;
+  const retryContext = getRetryContext(state.activeChat);
+  if (!retryContext) {
+    showToast('Send a message first');
+    return;
+  }
+
+  if (!state.settings.apiKey) {
+    showToast('Add your API key in Settings first');
+    closeLINEChat(true);
+    goHome();
+    setTimeout(() => openApp('settings'), 400);
+    return;
+  }
+
+  const messages = state.conversations[state.activeChat] || [];
+  const removedMessages = messages.splice(retryContext.lastUserIndex + 1);
+  saveState();
+  renderLINEMessages();
+
+  isSending = true;
+  updateLineSendBtn();
+  updateLineVoiceNoteButton();
+  updateLineRetryButton();
+  showTypingIndicator();
+
+  try {
+    const reply = await callAPI(state.activeChat);
+    removeTypingIndicator();
+    markLastUserMsgRead();
+    const shouldStage = state.currentApp === 'messages' && state.activeChat;
+    await deliverCharacterResponse(state.activeChat, reply, { read: true, staged: shouldStage });
+    showToast('Response regenerated');
+  } catch (err) {
+    removeTypingIndicator();
+    if (removedMessages.length) {
+      state.conversations[state.activeChat].push(...removedMessages);
+      saveState();
+      renderLINEMessages();
+    }
+    await showApiError(err);
+  } finally {
+    isSending = false;
+    updateLineSendBtn();
+    updateLineVoiceNoteButton();
+    updateLineRetryButton();
+  }
 }
 
 async function maybeSendCharacterOpeningLines(charId) {
