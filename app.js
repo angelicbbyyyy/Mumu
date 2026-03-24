@@ -294,9 +294,40 @@ function getVoiceIdLanguagePrefix(language) {
   return map[normalized] || '';
 }
 
+function isSystemMiniMaxVoiceId(voiceId) {
+  const prefixes = [
+    'English_',
+    'Japanese_',
+    'Korean_',
+    'Italian_',
+    'Spanish_',
+    'French_',
+    'German_',
+    'Portuguese_',
+    'Chinese (Mandarin)',
+    'Cantonese_',
+    'Indonesian_',
+    'Russian_',
+    'Arabic_',
+    'Turkish_',
+    'Ukrainian_',
+    'Thai_',
+    'Polish_',
+    'Romanian_',
+    'Greek_',
+    'Czech_',
+    'Finnish_',
+    'Hindi_',
+    'Dutch_',
+    'Vietnamese_',
+  ];
+  return prefixes.some(prefix => String(voiceId || '').startsWith(prefix));
+}
+
 function ensureVoiceIdMatchesLanguage(char, spokenLanguage) {
   const voiceId = String(char?.minimaxVoiceId || '').trim();
   if (!voiceId) throw new Error('Set a MiniMax voice ID for this character first.');
+  if (!isSystemMiniMaxVoiceId(voiceId)) return;
   const expectedPrefix = getVoiceIdLanguagePrefix(spokenLanguage);
   if (!expectedPrefix) return;
   if (voiceId.startsWith(expectedPrefix)) return;
