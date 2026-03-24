@@ -1807,11 +1807,52 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
   return cleanVoiceTranslationText(translated) || cleanedFallback || cleanedSource;
 }
 
+function logVoiceNoteDebug(stage, payload) {
+  const debugPayload = {
+    stage,
+    ...payload,
+    ts: new Date().toISOString(),
+  };
+  window.__lastVoiceNoteDebug = debugPayload;
+  console.info('[voice-note-debug]', debugPayload);
+}
+
+async function createVoiceNoteAttachmentFromSpokenText(spokenText, char, fallbackEnglish = '') {
+  const spokenLanguage = getCharacterVoiceLanguageLabel(char);
+  const cleanedSpokenText = cleanVoiceTranslationText(spokenText);
+  ensureVoiceIdMatchesLanguage(char, spokenLanguage);
+  const translationEn = await translateVoiceTextToEnglish(cleanedSpokenText, spokenLanguage, char, fallbackEnglish);
+  logVoiceNoteDebug('spoken-first', {
+    charId: char?.id || '',
+    voiceId: char?.minimaxVoiceId || '',
+    spokenLanguage,
+    spokenText: cleanedSpokenText,
+    translationEn,
+  });
+  const attachment = await generateMiniMaxVoiceAttachment(cleanedSpokenText, char, {
+    spokenLanguage,
+    translationEn,
+    sourceText: cleanedSpokenText,
+    displayStyle: 'voice-note',
+    translationRevealed: false,
+    translationStatus: 'hidden',
+  });
+  return attachment;
+}
+
 async function createCharacterVoiceNoteAttachment(charId, englishText, char) {
   const canonicalEnglish = cleanVoiceTranslationText(englishText);
   const { spokenText, spokenLanguage } = await translateEnglishTextForVoice(charId, canonicalEnglish, char);
   ensureVoiceIdMatchesLanguage(char, spokenLanguage);
   const translationEn = await translateVoiceTextToEnglish(spokenText, spokenLanguage, char, canonicalEnglish);
+  logVoiceNoteDebug('english-first', {
+    charId,
+    voiceId: char?.minimaxVoiceId || '',
+    spokenLanguage,
+    canonicalEnglish,
+    spokenText,
+    translationEn,
+  });
   const attachment = await generateMiniMaxVoiceAttachment(spokenText, char, {
     spokenLanguage,
     translationEn,
@@ -1903,7 +1944,7 @@ async function requestCharacterVoiceNote() {
       mode: 'voice_note',
       targetLanguageForReply: getCharacterVoiceLanguageLabel(char),
     });
-    const voiceAttachment = await createCharacterVoiceNoteAttachment(state.activeChat, reply, char);
+    const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(reply, char);
     removeTypingIndicator();
     appendSingleAssistantMessage(state.activeChat, reply, { read: true, attachments: [voiceAttachment] });
     renderLINEMessages();
