@@ -1818,6 +1818,22 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
   return cleanedTranslation || cleanedFallback || cleanedSource;
 }
 
+async function generateSpokenVoiceReply(charId, char) {
+  const spokenLanguage = getCharacterVoiceLanguageLabel(char);
+  const rawReply = await callAPI(charId, {
+    mode: 'voice_note',
+    targetLanguageForReply: spokenLanguage,
+  });
+  const spokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(rawReply));
+  if (!spokenText) {
+    throw new Error('Voice note generation returned empty text.');
+  }
+  return {
+    spokenText,
+    spokenLanguage,
+  };
+}
+
 function logVoiceNoteDebug(stage, payload) {
   const debugPayload = {
     stage,
@@ -1883,6 +1899,15 @@ async function createCharacterVoiceNoteAttachment(charId, englishText, char) {
     translationStatus: 'hidden',
   });
   return attachment;
+}
+
+async function createVoiceNoteMessageFromSpokenReply(charId, spokenText, char, fallbackEnglish = '') {
+  const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(spokenText, char, fallbackEnglish);
+  const visibleEnglish = voiceAttachment.translationEn || cleanVoiceTranslationText(fallbackEnglish) || '';
+  return appendSingleAssistantMessage(charId, visibleEnglish, {
+    read: true,
+    attachments: [voiceAttachment],
+  });
 }
 
 async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
@@ -1968,13 +1993,13 @@ async function requestCharacterVoiceNote() {
   showToast('Generating voice note...');
 
   try {
-    const reply = await callAPI(state.activeChat, {
-      mode: 'voice_note',
-      targetLanguageForReply: getCharacterVoiceLanguageLabel(char),
+    const { spokenText, spokenLanguage } = await generateSpokenVoiceReply(state.activeChat, char);
+    const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(spokenText, {
+      ...char,
+      minimaxLanguage: spokenLanguage,
     });
-    const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(reply, char);
     removeTypingIndicator();
-    appendSingleAssistantMessage(state.activeChat, reply, { read: true, attachments: [voiceAttachment] });
+    appendSingleAssistantMessage(state.activeChat, voiceAttachment.translationEn || '', { read: true, attachments: [voiceAttachment] });
     renderLINEMessages();
     renderLINEConvList();
     showToast('Voice note generated');
