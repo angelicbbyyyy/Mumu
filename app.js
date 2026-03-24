@@ -1061,6 +1061,7 @@ function openLINEChat(charId) {
 function closeLINEChat(silent = false) {
   state.activeChat = null;
   state.pendingLineAttachments = [];
+  closeLineChatMenu();
   document.getElementById('lineChat').classList.remove('open');
   document.getElementById('lineHome').classList.remove('hidden');
   const input = document.getElementById('lineInput');
@@ -1073,6 +1074,23 @@ function closeLINEChat(silent = false) {
 
 function openCharDetailFromChat() {
   if (state.activeChat) openEditCharSheet(state.activeChat);
+}
+
+function openLineChatMenu() {
+  if (!state.activeChat) return;
+  document.getElementById('lineChatMenuModal')?.classList.add('open');
+}
+
+function closeLineChatMenu(event) {
+  if (event && event.target !== document.getElementById('lineChatMenuModal')) return;
+  document.getElementById('lineChatMenuModal')?.classList.remove('open');
+}
+
+function openCharacterSettingsFromMenu() {
+  const charId = state.activeChat;
+  closeLineChatMenu();
+  if (!charId) return;
+  setTimeout(() => openCharacterSettings(charId), 120);
 }
 
 function renderLINEMessages() {

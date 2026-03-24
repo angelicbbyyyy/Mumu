@@ -301,7 +301,7 @@
                 <line x1="8" y1="22" x2="16" y2="22"/>
               </svg>
             </button>
-            <button class="line-nav-btn" type="button" onclick="openCharacterSettings(state.activeChat)" title="Character settings">
+            <button class="line-nav-btn" type="button" onclick="openLineChatMenu()" title="Chat menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
               </svg>
@@ -976,6 +976,22 @@
         <div class="modal-actions">
           <button class="btn btn-secondary" type="button" onclick="closeCharacterSettings()">Cancel</button>
           <button class="btn btn-primary" type="button" onclick="saveCharacterSettings()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="lineChatMenuModal" onclick="closeLineChatMenu(event)">
+      <div class="modal-sheet line-chat-menu-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">Chat Menu</div>
+        <div class="settings-group line-chat-menu-group">
+          <button class="line-chat-menu-item" type="button" onclick="openCharacterSettingsFromMenu()">
+            <span>Character Settings</span>
+            <span>›</span>
+          </button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" type="button" onclick="closeLineChatMenu()">Cancel</button>
         </div>
       </div>
     </div>

@@ -2853,6 +2853,29 @@ body {
   max-height: 82%;
 }
 
+.line-chat-menu-sheet {
+  max-height: 38%;
+}
+
+.line-chat-menu-group {
+  margin-bottom: 16px;
+}
+
+.line-chat-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  text-align: left;
+}
+
 @media (max-width: 420px) {
   .memory-summary-grid,
   .memory-character-stats,
