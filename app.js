@@ -1205,9 +1205,9 @@ function nextFrame() {
 
 function getAssistantChunkDelay(part) {
   const text = String(part || '').trim();
-  if (!text) return 900;
-  const base = 820 + Math.min(text.length * 14, 520);
-  return Math.max(900, Math.min(1450, base));
+  if (!text) return 520;
+  const base = 420 + Math.min(text.length * 16, 680);
+  return Math.max(520, Math.min(1100, base));
 }
 
 async function deliverAssistantReply(charId, content, { read = false, staged = false } = {}) {
