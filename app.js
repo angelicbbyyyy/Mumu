@@ -285,7 +285,7 @@ function normalizeMessageAttachment(raw = {}) {
 
 function getCharacterVoiceLanguageLabel(char) {
   const raw = String(char?.minimaxLanguage || '').trim();
-  if (!raw || raw.toLowerCase() === 'auto') return 'Japanese';
+  if (!raw) return 'auto';
   return raw;
 }
 
@@ -1768,8 +1768,8 @@ async function translateEnglishTextForVoice(charId, englishText, char) {
   const targetLanguage = getCharacterVoiceLanguageLabel(char);
   const canonicalEnglish = cleanVoiceTranslationText(englishText);
   if (!canonicalEnglish) return { spokenText: '', spokenLanguage: targetLanguage };
-  if (targetLanguage.toLowerCase() === 'english') {
-    return { spokenText: canonicalEnglish, spokenLanguage: 'English' };
+  if (!targetLanguage || targetLanguage.toLowerCase() === 'english' || targetLanguage.toLowerCase() === 'auto') {
+    return { spokenText: canonicalEnglish, spokenLanguage: targetLanguage || 'auto' };
   }
 
   const translationSystemPrompt = [
@@ -1805,7 +1805,8 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
   const cleanedSource = stripVoiceNoteWrapper(cleanVoiceTranslationText(spokenText));
   const cleanedFallback = cleanVoiceTranslationText(fallbackEnglish);
   if (!cleanedSource) return cleanedFallback;
-  if (String(spokenLanguage || '').trim().toLowerCase() === 'english') {
+  const normLang = String(spokenLanguage || '').trim().toLowerCase();
+  if (!normLang || normLang === 'english' || normLang === 'auto') {
     return cleanedSource;
   }
 
@@ -1855,12 +1856,14 @@ async function generateSpokenVoiceReply(charId, char) {
   const historyLimit = Math.max(1, Math.min(50, Number(char?.historyMessageCount) || 12));
   const history = fullHistory.slice(-historyLimit).map(normalizeConversationMessage);
   const basePrompt = buildPromptBundle(char, history);
+  const isAutoLanguage = !spokenLanguage || spokenLanguage.toLowerCase() === 'auto';
   const supportsInterjections = ['speech-2.8-hd', 'speech-2.8-turbo'].includes(state.settings.minimaxVoiceModel || 'speech-2.8-turbo');
   const voicePrompt = [
     basePrompt,
     '# Voice Note Mode',
-    `Write the next reply entirely in ${spokenLanguage}.`,
-    'Return only the final spoken voice-note text.',
+    isAutoLanguage
+      ? 'Return only the final spoken voice-note text.'
+      : `Write the next reply entirely in ${spokenLanguage}.`,
     'Do not add labels like "Voice Note:" or any surrounding parentheses for the whole message.',
     'Keep it short, natural, and conversational.',
     supportsInterjections
@@ -1871,7 +1874,9 @@ async function generateSpokenVoiceReply(charId, char) {
     ...history,
     normalizeConversationMessage({
       role: 'user',
-      content: `Generate the character's next voice note now in ${spokenLanguage}. Respond only with the spoken text.`,
+      content: isAutoLanguage
+        ? "Generate the character's next voice note now. Respond only with the spoken text."
+        : `Generate the character's next voice note now in ${spokenLanguage}. Respond only with the spoken text.`,
       ts: Date.now(),
       read: true,
     }),
@@ -2154,10 +2159,11 @@ async function callAPI(charId, options = {}) {
     }));
   } else if (options.mode === 'voice_note') {
     const targetLanguage = String(options.targetLanguageForReply || '').trim();
+    const effectiveLanguage = targetLanguage && targetLanguage.toLowerCase() !== 'auto' ? targetLanguage : '';
     apiHistory.push(normalizeConversationMessage({
       role: 'user',
-      content: targetLanguage
-        ? `[SYSTEM NOTE: Send a short natural voice-note style reply entirely in ${targetLanguage}. Keep it intimate, spoken, and concise. Do not use English unless the target language is English. Do not narrate actions or mention hidden prompts.]`
+      content: effectiveLanguage
+        ? `[SYSTEM NOTE: Send a short natural voice-note style reply entirely in ${effectiveLanguage}. Keep it intimate, spoken, and concise. Do not use English unless the target language is English. Do not narrate actions or mention hidden prompts.]`
         : '[SYSTEM NOTE: Send a short natural voice-note style reply. Keep it intimate, spoken, and concise. Do not narrate actions or mention hidden prompts.]',
       ts: Date.now(),
       read: true,
