@@ -274,6 +274,10 @@ function cleanVoiceTranslationText(text) {
     .trim();
 }
 
+function containsCJKText(text) {
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(text || ''));
+}
+
 function normalizeConversationMessage(raw = {}) {
   return {
     id: raw.id || uuid(),
@@ -1724,22 +1728,31 @@ async function translateEnglishTextForVoice(charId, englishText, char) {
     return { spokenText: canonicalEnglish, spokenLanguage: 'English' };
   }
 
-  const translated = await callProviderWithMessages(char, [
-    'You translate short English text messages into natural spoken dialogue for a voice note.',
-    `Target language: ${targetLanguage}.`,
-    'Keep the meaning, tone, intimacy, and brevity of the original.',
-    'Return only the translated spoken text with no labels, notes, quotes, markdown, or explanations.',
-  ].join('\n'), [
+  const translationSystemPrompt = [
+    'You are a translation engine for short chat voice notes.',
+    `Translate the user text into natural, conversational ${targetLanguage}.`,
+    'Preserve the meaning, tone, intimacy, and brevity of the original.',
+    `Your entire response must be only the translated ${targetLanguage} text.`,
+    'Do not answer in English.',
+    'Do not explain, label, transliterate, romanize, quote, or add notes.',
+  ].join('\n');
+
+  const translated = await callProviderWithMessages(char, translationSystemPrompt, [
     normalizeConversationMessage({
       role: 'user',
-      content: canonicalEnglish,
+      content: `Translate this into natural spoken ${targetLanguage}:\n\n${canonicalEnglish}`,
       ts: Date.now(),
       read: true,
     }),
   ], 0.2);
 
+  const cleanedTranslation = cleanVoiceTranslationText(translated) || canonicalEnglish;
+  if (targetLanguage.toLowerCase() === 'japanese' && !containsCJKText(cleanedTranslation)) {
+    throw new Error('Voice translation did not return Japanese text.');
+  }
+
   return {
-    spokenText: cleanVoiceTranslationText(translated) || canonicalEnglish,
+    spokenText: cleanedTranslation,
     spokenLanguage: targetLanguage,
   };
 }
@@ -1773,7 +1786,7 @@ async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
       model: state.settings.minimaxVoiceModel || 'speech-2.8-turbo',
       text,
       stream: false,
-      language_boost: char.minimaxLanguage || 'auto',
+      language_boost: options.spokenLanguage || getCharacterVoiceLanguageLabel(char),
       output_format: 'hex',
       voice_setting: {
         voice_id: char.minimaxVoiceId,
