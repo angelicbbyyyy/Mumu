@@ -1624,12 +1624,14 @@ function updateLineRetryButton() {
   const btn = document.getElementById('lineRetryBtn');
   if (!btn) return;
   const retryContext = state.activeChat ? getRetryContext(state.activeChat) : null;
-  btn.disabled = !state.activeChat || isSending || !retryContext;
+  btn.disabled = !state.activeChat || isSending;
   btn.classList.toggle('is-disabled', btn.disabled);
+  btn.classList.toggle('is-unconfigured', !retryContext && !!state.activeChat);
 }
 
 async function retryLastResponse() {
   if (!state.activeChat || isSending) return;
+  showToast('Regenerating...');
   const retryContext = getRetryContext(state.activeChat);
   if (!retryContext) {
     showToast('Send a message first');
