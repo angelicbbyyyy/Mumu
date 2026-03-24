@@ -300,9 +300,22 @@ body {
 }
 
 .icon-settings {
-  background:
-    radial-gradient(circle at 42% 15%, rgba(255,255,255,0.38), transparent 24%),
-    linear-gradient(180deg, #F6F8FB 0%, #C9CED8 100%);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.icon-settings::before {
+  display: none;
+}
+
+.icon-raw-svg {
+  overflow: visible;
+}
+
+.icon-raw-svg .icon-glyph {
+  width: 100%;
+  height: 100%;
 }
 
 .icon-wallet {
