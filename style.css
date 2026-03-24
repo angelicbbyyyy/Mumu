@@ -299,18 +299,10 @@ body {
     linear-gradient(180deg, #E8D4FF 0%, #C9B8FF 100%);
 }
 
-.settings-dock-icon {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.settings-dock-icon-svg {
-  width: 56px;
-  height: 56px;
-  display: block;
+.icon-settings {
+  background:
+    radial-gradient(circle at 42% 15%, rgba(255,255,255,0.38), transparent 24%),
+    linear-gradient(180deg, #F6F8FB 0%, #C9CED8 100%);
 }
 
 .icon-wallet {
