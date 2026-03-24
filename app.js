@@ -1751,6 +1751,7 @@ async function requestCharacterVoiceNote() {
   updateLineSendBtn();
   updateLineVoiceNoteButton();
   showTypingIndicator();
+  showToast('Generating voice note...');
 
   try {
     const reply = await callAPI(state.activeChat, { mode: 'voice_note' });
