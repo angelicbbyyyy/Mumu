@@ -1175,11 +1175,15 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function nextFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
 function getAssistantChunkDelay(part) {
   const text = String(part || '').trim();
-  if (!text) return 280;
-  const base = 260 + Math.min(text.length * 12, 520);
-  return Math.max(280, Math.min(760, base));
+  if (!text) return 520;
+  const base = 420 + Math.min(text.length * 16, 680);
+  return Math.max(520, Math.min(1100, base));
 }
 
 async function deliverAssistantReply(charId, content, { read = false, staged = false } = {}) {
@@ -1198,8 +1202,11 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
   for (let index = 0; index < parts.length; index += 1) {
     if (index > 0) {
       showTypingIndicator();
+      await nextFrame();
+      await nextFrame();
       await wait(getAssistantChunkDelay(parts[index]));
       removeTypingIndicator();
+      await nextFrame();
     }
 
     const msg = normalizeConversationMessage({
