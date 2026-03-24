@@ -997,6 +997,34 @@ body {
   height: 34px;
 }
 
+.line-msg-translation-slot.is-hidden {
+  display: none;
+}
+
+.line-msg-translation-strip {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.line-msg-translation-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #6b7280;
+}
+
+.line-msg-translation-text {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #1f2937;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .line-msg-text {
   white-space: pre-wrap;
   word-break: break-word;

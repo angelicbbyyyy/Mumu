@@ -244,12 +244,34 @@ function normalizeWorldBookEntry(raw = {}) {
 
 function normalizeMessageAttachment(raw = {}) {
   const type = raw.type === 'audio' ? 'audio' : 'image';
+  const audioUrl = raw.audioUrl || raw.audio_url || raw.url || '';
   return {
+    id: raw.id || uuid(),
     type,
-    url: raw.url || '',
+    url: audioUrl,
+    audioUrl,
     mimeType: raw.mimeType || (type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
     name: raw.name || (type === 'audio' ? 'audio' : 'image'),
+    spokenLanguage: raw.spokenLanguage || raw.spoken_language || '',
+    translationEn: raw.translationEn || raw.translation_en || '',
+    translationRevealed: raw.translationRevealed === true,
+    translationStatus: raw.translationStatus || raw.translation_status || (type === 'audio' ? 'hidden' : ''),
+    displayStyle: raw.displayStyle || '',
+    sourceText: raw.sourceText || raw.source_text || '',
   };
+}
+
+function getCharacterVoiceLanguageLabel(char) {
+  const raw = String(char?.minimaxLanguage || '').trim();
+  if (!raw || raw.toLowerCase() === 'auto') return 'Japanese';
+  return raw;
+}
+
+function cleanVoiceTranslationText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^["“”'`]+|["“”'`]+$/g, '')
+    .trim();
 }
 
 function normalizeConversationMessage(raw = {}) {
@@ -530,6 +552,10 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function escJs(str) {
+  return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 function formatShortTime(ts) {
@@ -1139,7 +1165,7 @@ function renderLINEMessageHtml(msg, prevMsg, char, index, total, charId) {
           <span class="line-time">${escHtml(timeStr)}</span>
         </div>
         <div class="line-bubble-wrap">
-          <div class="line-bubble sent">${renderMessageInner(msg)}</div>
+          <div class="line-bubble sent">${renderMessageInner(msg, charId)}</div>
         </div>
       </div>`;
     return html;
@@ -1151,7 +1177,7 @@ function renderLINEMessageHtml(msg, prevMsg, char, index, total, charId) {
         ? avatarMarkup(char?.avatar, 'line-msg-avatar')
         : `<div class="line-msg-avatar-spacer"></div>`}
       <div class="line-bubble-wrap">
-        <div class="line-bubble received">${renderMessageInner(msg)}</div>
+        <div class="line-bubble received">${renderMessageInner(msg, charId)}</div>
         <div class="line-msg-meta">
           <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${charId}', '${msg.id}')">★</button>
           <span class="line-time">${escHtml(timeStr)}</span>
@@ -1342,7 +1368,39 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
   return created;
 }
 
-function renderMessageInner(msg) {
+function renderVoiceTranslationContainerId(msgId, attachmentId) {
+  return `voice-translation-${msgId}-${attachmentId}`;
+}
+
+function renderVoiceTranslationHtml(att) {
+  if (!att.translationRevealed || !att.translationEn) return '';
+  const language = escHtml(att.spokenLanguage || 'Japanese');
+  return `
+    <div class="line-msg-translation-strip">
+      <div class="line-msg-translation-label">Translated from ${language}</div>
+      <div class="line-msg-translation-text">${escHtml(att.translationEn)}</div>
+    </div>
+  `;
+}
+
+function revealVoiceTranslation(charId, msgId, attachmentId) {
+  const messages = state.conversations[charId] || [];
+  const msg = messages.find(entry => entry.id === msgId);
+  const attachment = msg?.attachments?.find(entry => entry.id === attachmentId);
+  if (!attachment || attachment.translationRevealed || !attachment.translationEn) return;
+
+  attachment.translationRevealed = true;
+  attachment.translationStatus = 'revealed';
+  saveState();
+
+  const container = document.getElementById(renderVoiceTranslationContainerId(msgId, attachmentId));
+  if (container) {
+    container.innerHTML = renderVoiceTranslationHtml(attachment);
+    container.classList.remove('is-hidden');
+  }
+}
+
+function renderMessageInner(msg, charId) {
   const attachments = msg.attachments || [];
   const images = attachments
     .filter(att => att.type === 'image' && att.url)
@@ -1352,11 +1410,20 @@ function renderMessageInner(msg) {
     .filter(att => att.type === 'audio' && att.url)
     .map(att => `
       <div class="line-msg-audio-card">
-        <div class="line-msg-audio-label">${escHtml(att.name || 'Voice message')}</div>
-        <audio class="line-msg-audio" controls preload="metadata" src="${escHtml(att.url)}"></audio>
+        <div class="line-msg-audio-label">${escHtml(att.name || 'Voice message')}${att.spokenLanguage ? ` • ${escHtml(att.spokenLanguage)}` : ''}</div>
+        <audio
+          class="line-msg-audio"
+          controls
+          preload="metadata"
+          src="${escHtml(att.url)}"
+          onplay="revealVoiceTranslation('${escJs(charId)}', '${escJs(msg.id)}', '${escJs(att.id)}')"></audio>
+        <div
+          class="line-msg-translation-slot ${att.translationRevealed ? '' : 'is-hidden'}"
+          id="${escHtml(renderVoiceTranslationContainerId(msg.id, att.id))}">${renderVoiceTranslationHtml(att)}</div>
       </div>`)
     .join('');
-  const text = msg.content ? `<div class="line-msg-text">${escHtml(msg.content)}</div>` : '';
+  const hasVoiceNoteCard = attachments.some(att => att.type === 'audio' && att.displayStyle === 'voice-note');
+  const text = msg.content && !hasVoiceNoteCard ? `<div class="line-msg-text">${escHtml(msg.content)}</div>` : '';
   return `${images}${audio}${text}`;
 }
 
@@ -1557,7 +1624,61 @@ function hexToBase64(hex) {
   return btoa(chunks.join(''));
 }
 
-async function generateMiniMaxVoiceAttachment(text, char) {
+async function callProviderWithMessages(char, systemPrompt, messages, temperature = null) {
+  const { apiKey } = state.settings;
+  const model = char?.modelOverride?.trim() || state.settings.model;
+  const provDef = getProviderConfig();
+  const baseUrl = provDef.baseUrl;
+
+  if (provDef.format === 'anthropic') {
+    return callAnthropic(baseUrl, apiKey, model, systemPrompt, messages, provDef, temperature);
+  }
+  return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, messages, provDef, temperature);
+}
+
+async function translateEnglishTextForVoice(charId, englishText, char) {
+  const targetLanguage = getCharacterVoiceLanguageLabel(char);
+  const canonicalEnglish = cleanVoiceTranslationText(englishText);
+  if (!canonicalEnglish) return { spokenText: '', spokenLanguage: targetLanguage };
+  if (targetLanguage.toLowerCase() === 'english') {
+    return { spokenText: canonicalEnglish, spokenLanguage: 'English' };
+  }
+
+  const translated = await callProviderWithMessages(char, [
+    'You translate short English text messages into natural spoken dialogue for a voice note.',
+    `Target language: ${targetLanguage}.`,
+    'Keep the meaning, tone, intimacy, and brevity of the original.',
+    'Return only the translated spoken text with no labels, notes, quotes, markdown, or explanations.',
+  ].join('\n'), [
+    normalizeConversationMessage({
+      role: 'user',
+      content: canonicalEnglish,
+      ts: Date.now(),
+      read: true,
+    }),
+  ], 0.2);
+
+  return {
+    spokenText: cleanVoiceTranslationText(translated) || canonicalEnglish,
+    spokenLanguage: targetLanguage,
+  };
+}
+
+async function createCharacterVoiceNoteAttachment(charId, englishText, char) {
+  const canonicalEnglish = cleanVoiceTranslationText(englishText);
+  const { spokenText, spokenLanguage } = await translateEnglishTextForVoice(charId, canonicalEnglish, char);
+  const attachment = await generateMiniMaxVoiceAttachment(spokenText, char, {
+    spokenLanguage,
+    translationEn: canonicalEnglish,
+    sourceText: spokenText,
+    displayStyle: 'voice-note',
+    translationRevealed: false,
+    translationStatus: 'hidden',
+  });
+  return attachment;
+}
+
+async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
   const apiKey = state.settings.minimaxApiKey?.trim();
   if (!apiKey) throw new Error('Add your MiniMax API key in Studio first.');
   if (!char?.minimaxVoiceId) throw new Error('Set a MiniMax voice ID for this character first.');
@@ -1602,6 +1723,12 @@ async function generateMiniMaxVoiceAttachment(text, char) {
     url: `data:audio/mpeg;base64,${hexToBase64(hexAudio)}`,
     mimeType: 'audio/mpeg',
     name: `${char.name} voice note`,
+    spokenLanguage: options.spokenLanguage || '',
+    translationEn: options.translationEn || '',
+    translationRevealed: options.translationRevealed === true,
+    translationStatus: options.translationStatus || 'hidden',
+    displayStyle: options.displayStyle || 'voice-note',
+    sourceText: options.sourceText || text,
   });
 }
 
@@ -1627,7 +1754,7 @@ async function requestCharacterVoiceNote() {
 
   try {
     const reply = await callAPI(state.activeChat, { mode: 'voice_note' });
-    const voiceAttachment = await generateMiniMaxVoiceAttachment(reply, char);
+    const voiceAttachment = await createCharacterVoiceNoteAttachment(state.activeChat, reply, char);
     removeTypingIndicator();
     appendSingleAssistantMessage(state.activeChat, reply, { read: true, attachments: [voiceAttachment] });
     renderLINEMessages();
@@ -1662,12 +1789,16 @@ async function deliverCharacterResponse(charId, reply, { read = false, staged = 
   const char = normalizeCharacter(rawChar || {});
 
   if (shouldGenerateCharacterVoiceNote(char, reply)) {
-    const voiceAttachment = await generateMiniMaxVoiceAttachment(reply, char);
-    appendSingleAssistantMessage(charId, reply, { read, attachments: [voiceAttachment] });
-    if (state.currentApp === 'messages' && state.activeChat === charId) {
-      renderLINEMessages();
+    try {
+      const voiceAttachment = await createCharacterVoiceNoteAttachment(charId, reply, char);
+      appendSingleAssistantMessage(charId, reply, { read, attachments: [voiceAttachment] });
+      if (state.currentApp === 'messages' && state.activeChat === charId) {
+        renderLINEMessages();
+      }
+      return;
+    } catch (err) {
+      console.error('Auto voice note fallback to text', err);
     }
-    return;
   }
 
   await deliverAssistantReply(charId, reply, { read, staged });
