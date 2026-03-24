@@ -1883,9 +1883,18 @@ async function generateSpokenVoiceReply(charId, char) {
     char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null,
   );
   let spokenText = maybeNormalizeSpokenVoiceReply(rawReply, spokenLanguage);
-  if (!spokenText && history.length) {
-    const fallback = await callAPI(charId, { mode: 'voice_note', targetLanguageForReply: spokenLanguage });
-    spokenText = maybeNormalizeSpokenVoiceReply(fallback, spokenLanguage);
+  if (!spokenText) {
+    const directFallback = await callAPI(charId, { mode: 'voice_note', targetLanguageForReply: spokenLanguage });
+    spokenText = maybeNormalizeSpokenVoiceReply(directFallback, spokenLanguage);
+  }
+  if (!spokenText) {
+    const englishFallback = await callAPI(charId);
+    if (spokenLanguage.toLowerCase() === 'english') {
+      spokenText = maybeNormalizeSpokenVoiceReply(englishFallback, spokenLanguage);
+    } else {
+      const translatedFallback = await translateEnglishTextForVoice(charId, englishFallback, char);
+      spokenText = maybeNormalizeSpokenVoiceReply(translatedFallback.spokenText, spokenLanguage);
+    }
   }
   if (!spokenText) throw new Error('Voice note generation returned empty text.');
   if (spokenLanguage.toLowerCase() === 'japanese' && !containsCJKText(spokenText)) {
