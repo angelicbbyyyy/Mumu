@@ -301,11 +301,10 @@ function containsCJKText(text) {
 }
 
 function stripVoiceNoteWrapper(text) {
-  return String(text || '')
-    .trim()
-    .replace(/^\(?\s*(voice\s*note|audio\s*message|音声メッセージ|ボイスメモ)\s*[:：-]\s*/i, '')
-    .replace(/\)\s*$/, '')
-    .trim();
+  const raw = String(text || '').trim();
+  const stripped = raw.replace(/^\(?\s*(voice\s*note|audio\s*message|音声メッセージ|ボイスメモ)\s*[:：-]\s*/i, '');
+  // Only strip a trailing ) if it matched the wrapper label above
+  return (stripped !== raw ? stripped.replace(/\)\s*$/, '') : stripped).trim();
 }
 
 function ensureVoiceIdMatchesLanguage(char, spokenLanguage) {
@@ -1894,17 +1893,26 @@ async function generateSpokenVoiceReply(charId, char) {
   }
   if (!spokenText) {
     const englishFallback = await callAPI(charId);
-    if (spokenLanguage.toLowerCase() === 'english') {
+    const normLangForFallback = spokenLanguage.toLowerCase();
+    if (!normLangForFallback || normLangForFallback === 'english' || normLangForFallback === 'auto') {
       spokenText = maybeNormalizeSpokenVoiceReply(englishFallback, spokenLanguage);
     } else {
-      const translatedFallback = await translateEnglishTextForVoice(charId, englishFallback, char);
-      spokenText = maybeNormalizeSpokenVoiceReply(translatedFallback.spokenText, spokenLanguage);
+      try {
+        const translatedFallback = await translateEnglishTextForVoice(charId, englishFallback, char);
+        spokenText = maybeNormalizeSpokenVoiceReply(translatedFallback.spokenText, spokenLanguage);
+      } catch {
+        spokenText = maybeNormalizeSpokenVoiceReply(englishFallback, spokenLanguage);
+      }
     }
   }
   if (!spokenText) throw new Error('Voice note generation returned empty text.');
   if (spokenLanguage.toLowerCase() === 'japanese' && !containsCJKText(spokenText)) {
-    const translated = await translateEnglishTextForVoice(charId, spokenText, char);
-    spokenText = maybeNormalizeSpokenVoiceReply(translated.spokenText, spokenLanguage);
+    try {
+      const translated = await translateEnglishTextForVoice(charId, spokenText, char);
+      spokenText = maybeNormalizeSpokenVoiceReply(translated.spokenText, spokenLanguage) || spokenText;
+    } catch {
+      // keep existing spokenText and let MiniMax attempt it
+    }
   }
   return { spokenText, spokenLanguage };
 }
@@ -1982,7 +1990,7 @@ async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
     }),
   });
 
-  const payload = await resp.json();
+  const payload = await resp.json().catch(() => ({}));
   if (!resp.ok || payload?.base_resp?.status_code) {
     throw new Error(payload?.base_resp?.status_msg || `MiniMax TTS failed (${resp.status})`);
   }
