@@ -293,13 +293,15 @@
             <div class="line-chat-sub" id="lineChatSub">online</div>
           </div>
           <div class="line-chat-nav-right">
-            <button class="line-nav-btn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            <button class="line-nav-btn" id="lineVoiceNoteBtn" type="button" onclick="requestCharacterVoiceNote()" title="Generate voice note">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                <line x1="12" y1="18" x2="12" y2="22"/>
+                <line x1="8" y1="22" x2="16" y2="22"/>
               </svg>
             </button>
-            <button class="line-nav-btn">
+            <button class="line-nav-btn" type="button" onclick="openCharacterSettings(state.activeChat)" title="Character settings">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
               </svg>
@@ -669,6 +671,30 @@
           </div>
         </div>
 
+        <div class="settings-section-label">MiniMax Voice</div>
+        <div class="settings-group">
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#eef4ff;">🎙️</div>
+            <div class="settings-row-label">MiniMax API Key</div>
+            <input class="settings-input" id="settingsMiniMaxApiKey" type="password" placeholder="••••••••" autocomplete="off" oninput="saveSettings()">
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#fff5e8;">🔊</div>
+            <div class="settings-row-label">Voice Model</div>
+            <select class="settings-select" id="settingsMiniMaxVoiceModel" onchange="saveSettings()">
+              <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+              <option value="speech-2.8-hd">speech-2.8-hd</option>
+              <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+              <option value="speech-2.6-hd">speech-2.6-hd</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-group">
+          <div class="settings-row-help">
+            MiniMax voice is used for per-character voice notes. Add the API key here, then set each character's <strong>voice_id</strong> in Character Settings.
+          </div>
+        </div>
+
         <div class="settings-section-label">Memory Notes</div>
         <div class="settings-group persona-stack-group">
           <div class="persona-stack-card">
@@ -895,6 +921,62 @@
         <div class="modal-handle"></div>
         <div class="modal-title">Character Profile</div>
         <div id="characterProfileContent"></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="characterSettingsModal" onclick="closeCharacterSettings(event)">
+      <div class="modal-sheet character-settings-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title" id="charSettingsName">Character Settings</div>
+
+        <div class="form-section">
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Opening Lines</span>
+            <textarea class="form-textarea" id="charSettingsOpeningLines" placeholder="One message per line. These send automatically when a brand new chat opens." rows="4"></textarea>
+          </div>
+          <div class="form-row">
+            <span class="form-label">History Window</span>
+            <input class="form-input" id="charSettingsHistoryMessageCount" type="number" min="1" max="50" step="1" placeholder="12">
+          </div>
+          <div class="form-row">
+            <span class="form-label">World Book Categories</span>
+            <input class="form-input" id="charSettingsWorldBookCategories" type="text" placeholder="romance, school, family">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-row">
+            <span class="form-label">MiniMax voice_id</span>
+            <input class="form-input" id="charSettingsMiniMaxVoiceId" type="text" placeholder="English_expressive_narrator">
+          </div>
+          <div class="form-row form-row-stack">
+            <div class="form-row-stack-head">
+              <span class="form-label">Voice Speed</span>
+              <span class="form-row-value" id="charSettingsMiniMaxVoiceSpeedLabel">1.0x</span>
+            </div>
+            <input class="settings-slider" id="charSettingsMiniMaxVoiceSpeed" type="range" min="0.5" max="2" step="0.1" value="1" oninput="updateCharacterVoiceSpeedLabel(this.value)">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Language</span>
+            <select class="settings-select" id="charSettingsMiniMaxLanguage">
+              <option value="auto">Auto</option>
+              <option value="English">English</option>
+              <option value="Italian">Italian</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Korean">Korean</option>
+              <option value="Chinese">Chinese</option>
+              <option value="Spanish">Spanish</option>
+              <option value="French">French</option>
+              <option value="German">German</option>
+              <option value="Portuguese">Portuguese</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" type="button" onclick="closeCharacterSettings()">Cancel</button>
+          <button class="btn btn-primary" type="button" onclick="saveCharacterSettings()">Save</button>
+        </div>
       </div>
     </div>
 

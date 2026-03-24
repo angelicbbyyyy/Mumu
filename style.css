@@ -979,6 +979,24 @@ body {
   margin-bottom: 6px;
 }
 
+.line-msg-audio-card {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  margin-bottom: 6px;
+}
+
+.line-msg-audio-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.line-msg-audio {
+  width: 100%;
+  height: 34px;
+}
+
 .line-msg-text {
   white-space: pre-wrap;
   word-break: break-word;
@@ -1150,6 +1168,12 @@ body {
   padding: 7px 6px;
   color: #6f757b;
   line-height: 1;
+}
+
+.line-nav-btn.is-disabled,
+.line-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* Messages area */
@@ -2240,6 +2264,31 @@ body {
   justify-content: space-between;
 }
 
+.form-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.form-row-stack-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.form-row-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5e87b8;
+}
+
+.settings-slider {
+  width: 100%;
+  accent-color: #ff4aa2;
+}
+
 .form-label {
   font-size: 15px;
   color: #000;
@@ -2771,6 +2820,10 @@ body {
   display: flex;
   gap: 10px;
   margin-top: 16px;
+}
+
+.character-settings-sheet {
+  max-height: 82%;
 }
 
 @media (max-width: 420px) {

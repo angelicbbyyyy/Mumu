@@ -12,6 +12,9 @@ const state = {
   currentApp: null,            // 'messages' | 'contacts' | 'worldbook' | 'persona' | 'settings' | null
   activeChat: null,            // character id currently open in LINE chat
   lineTab: 'chats',
+  editingCharId: null,
+  viewingCharacterId: null,
+  settingsCharId: null,
   characters: [],
   conversations: {},           // { charId: [{role, content, ts, read}] }
   pendingLineAttachments: [],
@@ -30,6 +33,8 @@ const state = {
     baseUrl: '',               // only used for 'custom'
     apiKey: '',
     model: 'claude-sonnet-4-6',
+    minimaxApiKey: '',
+    minimaxVoiceModel: 'speech-2.8-turbo',
     userName: 'You',
     memoryNote: '',
     notificationsEnabled: true,
@@ -42,8 +47,6 @@ const state = {
     transactions: [],
   },
   wallpaper: null,             // CSS background value
-  editingCharId: null,
-  viewingCharacterId: null,
 };
 
 // ============================================================
@@ -121,6 +124,8 @@ const DEFAULT_SETTINGS = {
   baseUrl: '',
   apiKey: '',
   model: 'claude-sonnet-4-6',
+  minimaxApiKey: '',
+  minimaxVoiceModel: 'speech-2.8-turbo',
   userName: 'You',
   memoryNote: '',
   notificationsEnabled: true,
@@ -166,12 +171,28 @@ function stringifyTagList(tags) {
   return parseTagList(tags).join(', ');
 }
 
+function parseLineList(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map(line => String(line).trim()).filter(Boolean);
+  }
+  return String(raw || '')
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function stringifyLineList(lines) {
+  return parseLineList(lines).join('\n');
+}
+
 function normalizeCharacter(raw = {}) {
   const rawTemperature = raw.temperature;
   const temperature = rawTemperature === '' || rawTemperature === null || rawTemperature === undefined
     ? ''
     : Math.max(0, Math.min(2, Number(rawTemperature) || 0));
   const autoMessageIntervalMinutes = Math.max(0, Number(raw.autoMessageIntervalMinutes) || 0);
+  const historyMessageCount = Math.max(1, Math.min(50, Number(raw.historyMessageCount) || 12));
+  const minimaxVoiceSpeed = Math.max(0.5, Math.min(2, Number(raw.minimaxVoiceSpeed) || 1));
   return {
     id: raw.id || uuid(),
     avatar: raw.avatar || '🤖',
@@ -188,6 +209,12 @@ function normalizeCharacter(raw = {}) {
     autoMessageEnabled: raw.autoMessageEnabled === true,
     autoMessageIntervalMinutes,
     lastAutoMessageAt: Number(raw.lastAutoMessageAt) || 0,
+    openingLines: parseLineList(raw.openingLines),
+    historyMessageCount,
+    mountedWorldBookCategories: parseTagList(raw.mountedWorldBookCategories),
+    minimaxVoiceId: raw.minimaxVoiceId || '',
+    minimaxVoiceSpeed,
+    minimaxLanguage: raw.minimaxLanguage || 'auto',
     closeness: Math.max(0, Math.min(100, Number(raw.closeness) || 50)),
     mood: raw.mood || '',
     availability: ['available', 'busy', 'offline'].includes(raw.availability) ? raw.availability : 'available',
@@ -213,11 +240,12 @@ function normalizeWorldBookEntry(raw = {}) {
 }
 
 function normalizeMessageAttachment(raw = {}) {
+  const type = raw.type === 'audio' ? 'audio' : 'image';
   return {
-    type: raw.type === 'image' ? 'image' : 'image',
+    type,
     url: raw.url || '',
-    mimeType: raw.mimeType || 'image/jpeg',
-    name: raw.name || 'image',
+    mimeType: raw.mimeType || (type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
+    name: raw.name || (type === 'audio' ? 'audio' : 'image'),
   };
 }
 
@@ -932,9 +960,7 @@ function renderLINEConvList(filter = '') {
   container.innerHTML = sorted.map(char => {
     const last = lastMsg(char.id);
     const unreadCount = getUnreadAssistantCount(char.id);
-    const preview = last
-      ? `${last.role === 'user' ? 'You: ' : ''}${last.content ? last.content.slice(0, 50) : (last.attachments?.length ? 'Photo' : '')}`
-      : 'Tap to chat';
+    const preview = last ? getConversationPreviewText(last) : 'Tap to chat';
     const timeStr = last ? formatShortTime(last.ts) : '';
     return `
       <div class="line-conv-item" onclick="openLINEChat('${char.id}')">
@@ -974,6 +1000,19 @@ function lastMsg(charId) {
   return msgs?.length ? msgs[msgs.length - 1] : null;
 }
 
+function getConversationPreviewText(message) {
+  if (!message) return '';
+  if (message.content) {
+    return `${message.role === 'user' ? 'You: ' : ''}${message.content.slice(0, 50)}`;
+  }
+  const audioAttachment = (message.attachments || []).find(att => att.type === 'audio');
+  if (audioAttachment) return `${message.role === 'user' ? 'You: ' : ''}Voice message`;
+  if ((message.attachments || []).some(att => att.type === 'image')) {
+    return `${message.role === 'user' ? 'You: ' : ''}Photo`;
+  }
+  return 'Message';
+}
+
 function getUnreadAssistantCount(charId) {
   const msgs = state.conversations[charId] || [];
   return msgs.filter(msg => msg.role === 'assistant' && !msg.read).length;
@@ -998,13 +1037,14 @@ function markAssistantMessagesRead(charId) {
 function openLINEChat(charId) {
   const char = state.characters.find(c => c.id === charId);
   if (!char) return;
+  const normalized = normalizeCharacter(char);
 
   state.activeChat = charId;
   state.pendingLineAttachments = [];
   markAssistantMessagesRead(charId);
 
-  document.getElementById('lineChatName').textContent = char.name;
-  document.getElementById('lineChatSub').textContent = char.description ? `📍 ${char.description}` : '📍 Mobile';
+  document.getElementById('lineChatName').textContent = normalized.name;
+  document.getElementById('lineChatSub').textContent = normalized.description ? `📍 ${normalized.description}` : '📍 Mobile';
 
   const chat = document.getElementById('lineChat');
   const home = document.getElementById('lineHome');
@@ -1013,6 +1053,8 @@ function openLINEChat(charId) {
 
   renderLINEMessages();
   renderLineAttachmentPreview();
+  updateLineVoiceNoteButton();
+  maybeSendCharacterOpeningLines(charId);
   setTimeout(() => document.getElementById('lineInput').focus(), 350);
 }
 
@@ -1195,6 +1237,22 @@ function appendAssistantReplyMessages(charId, content, { read = false } = {}) {
   return created;
 }
 
+function appendSingleAssistantMessage(charId, content, { read = false, attachments = [] } = {}) {
+  if (!state.conversations[charId]) {
+    state.conversations[charId] = [];
+  }
+  const msg = normalizeConversationMessage({
+    role: 'assistant',
+    content,
+    ts: Date.now(),
+    read,
+    attachments,
+  });
+  state.conversations[charId].push(msg);
+  saveState();
+  return msg;
+}
+
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1269,8 +1327,16 @@ function renderMessageInner(msg) {
     .filter(att => att.type === 'image' && att.url)
     .map(att => `<img class="line-msg-image" src="${escHtml(att.url)}" alt="${escHtml(att.name || 'Photo')}">`)
     .join('');
+  const audio = attachments
+    .filter(att => att.type === 'audio' && att.url)
+    .map(att => `
+      <div class="line-msg-audio-card">
+        <div class="line-msg-audio-label">${escHtml(att.name || 'Voice message')}</div>
+        <audio class="line-msg-audio" controls preload="metadata" src="${escHtml(att.url)}"></audio>
+      </div>`)
+    .join('');
   const text = msg.content ? `<div class="line-msg-text">${escHtml(msg.content)}</div>` : '';
-  return `${images}${text}`;
+  return `${images}${audio}${text}`;
 }
 
 function markLastUserMsgRead() {
@@ -1333,6 +1399,7 @@ async function sendLineMessage() {
   }
 
   isSending = true;
+  updateLineVoiceNoteButton();
   input.value = '';
   input.style.height = 'auto';
   state.pendingLineAttachments = [];
@@ -1369,6 +1436,7 @@ async function sendLineMessage() {
 
   isSending = false;
   updateLineSendBtn();
+  updateLineVoiceNoteButton();
 }
 
 function handleLineInputKeydown(e) {
@@ -1434,6 +1502,125 @@ function renderLineAttachmentPreview() {
   `;
 }
 
+function updateLineVoiceNoteButton() {
+  const btn = document.getElementById('lineVoiceNoteBtn');
+  if (!btn) return;
+  const char = state.characters.find(entry => entry.id === state.activeChat);
+  const enabled = !!normalizeCharacter(char || {}).minimaxVoiceId;
+  btn.disabled = !state.activeChat || !enabled || isSending;
+  btn.classList.toggle('is-disabled', btn.disabled);
+}
+
+async function maybeSendCharacterOpeningLines(charId) {
+  const char = state.characters.find(entry => entry.id === charId);
+  const normalized = normalizeCharacter(char || {});
+  if (!normalized.openingLines.length) return;
+  if ((state.conversations[charId] || []).length > 0) return;
+  await wait(180);
+  if (state.activeChat !== charId) return;
+  await deliverAssistantReply(charId, normalized.openingLines.join('\n'), {
+    read: true,
+    staged: true,
+  });
+  renderLINEConvList();
+}
+
+function hexToBase64(hex) {
+  const normalized = String(hex || '').replace(/\s+/g, '');
+  if (!normalized) return '';
+  const chunks = [];
+  for (let i = 0; i < normalized.length; i += 2) {
+    chunks.push(String.fromCharCode(parseInt(normalized.slice(i, i + 2), 16)));
+  }
+  return btoa(chunks.join(''));
+}
+
+async function generateMiniMaxVoiceAttachment(text, char) {
+  const apiKey = state.settings.minimaxApiKey?.trim();
+  if (!apiKey) throw new Error('Add your MiniMax API key in Studio first.');
+  if (!char?.minimaxVoiceId) throw new Error('Set a MiniMax voice ID for this character first.');
+
+  const resp = await fetch('https://api.minimax.io/v1/t2a_v2', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: state.settings.minimaxVoiceModel || 'speech-2.8-turbo',
+      text,
+      stream: false,
+      language_boost: char.minimaxLanguage || 'auto',
+      output_format: 'hex',
+      voice_setting: {
+        voice_id: char.minimaxVoiceId,
+        speed: char.minimaxVoiceSpeed || 1,
+        vol: 1,
+        pitch: 0,
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: 'mp3',
+        channel: 1,
+      },
+    }),
+  });
+
+  const payload = await resp.json();
+  if (!resp.ok || payload?.base_resp?.status_code) {
+    throw new Error(payload?.base_resp?.status_msg || `MiniMax TTS failed (${resp.status})`);
+  }
+
+  const hexAudio = payload?.data?.audio || '';
+  if (!hexAudio) throw new Error('MiniMax did not return audio data.');
+
+  return normalizeMessageAttachment({
+    type: 'audio',
+    url: `data:audio/mpeg;base64,${hexToBase64(hexAudio)}`,
+    mimeType: 'audio/mpeg',
+    name: `${char.name} voice note`,
+  });
+}
+
+async function requestCharacterVoiceNote() {
+  if (!state.activeChat || isSending) return;
+  const rawChar = state.characters.find(entry => entry.id === state.activeChat);
+  const char = normalizeCharacter(rawChar || {});
+  if (!char.minimaxVoiceId) {
+    showToast('Set a MiniMax voice ID in Character Settings first');
+    return;
+  }
+
+  if (!state.settings.minimaxApiKey?.trim()) {
+    showToast('Add your MiniMax API key in Studio first');
+    openApp('settings');
+    return;
+  }
+
+  isSending = true;
+  updateLineSendBtn();
+  updateLineVoiceNoteButton();
+  showTypingIndicator();
+
+  try {
+    const reply = await callAPI(state.activeChat, { mode: 'voice_note' });
+    const voiceAttachment = await generateMiniMaxVoiceAttachment(reply, char);
+    removeTypingIndicator();
+    appendSingleAssistantMessage(state.activeChat, reply, { read: true, attachments: [voiceAttachment] });
+    renderLINEMessages();
+    renderLINEConvList();
+    showToast('Voice note generated');
+  } catch (err) {
+    removeTypingIndicator();
+    await showApiError(err);
+  } finally {
+    isSending = false;
+    updateLineSendBtn();
+    updateLineVoiceNoteButton();
+  }
+}
+
 // ============================================================
 // Multi-Provider API Call
 // ============================================================
@@ -1490,7 +1677,9 @@ async function diagnoseNetworkError() {
 async function callAPI(charId, options = {}) {
   const rawChar = state.characters.find(c => c.id === charId);
   const char = rawChar ? normalizeCharacter(rawChar) : null;
-  const history = state.conversations[charId] || [];
+  const fullHistory = state.conversations[charId] || [];
+  const historyLimit = Math.max(1, Math.min(50, Number(char?.historyMessageCount) || 12));
+  const history = fullHistory.slice(-historyLimit);
   const { apiKey } = state.settings;
   const model = char?.modelOverride?.trim() || state.settings.model;
   const provDef = getProviderConfig();
@@ -1503,6 +1692,13 @@ async function callAPI(charId, options = {}) {
     apiHistory.push(normalizeConversationMessage({
       role: 'user',
       content: '[SYSTEM NOTE: Send a natural unprompted text message to the user right now. Do not mention hidden prompts, automation, or that you were told to reach out. Make it feel like a believable spontaneous text.]',
+      ts: Date.now(),
+      read: true,
+    }));
+  } else if (options.mode === 'voice_note') {
+    apiHistory.push(normalizeConversationMessage({
+      role: 'user',
+      content: '[SYSTEM NOTE: Send a short natural voice-note style reply. Keep it intimate, spoken, and concise. Do not narrate actions or mention hidden prompts.]',
       ts: Date.now(),
       read: true,
     }));
@@ -1628,10 +1824,12 @@ function selectRelevantWorldBookEntries(history, char) {
     .filter(Boolean)
     .join('\n')
     .toLowerCase();
+  const mountedCategories = new Set((char?.mountedWorldBookCategories || []).map(category => category.toLowerCase()));
 
   return state.worldBook
     .map(normalizeWorldBookEntry)
     .filter(entry => entry.enabled && entry.content.trim())
+    .filter(entry => !mountedCategories.size || mountedCategories.has(String(entry.category || '').toLowerCase()))
     .filter(entry => {
       if (entry.scope === 'always') return true;
       if (!entry.keywords.length) return false;
@@ -1829,6 +2027,10 @@ function renderSettings() {
   const provEl = document.getElementById('settingsProvider');
   if (provEl) provEl.value = s.provider || 'anthropic';
   document.getElementById('settingsApiKey').value = s.apiKey || '';
+  const minimaxKeyEl = document.getElementById('settingsMiniMaxApiKey');
+  if (minimaxKeyEl) minimaxKeyEl.value = s.minimaxApiKey || '';
+  const minimaxModelEl = document.getElementById('settingsMiniMaxVoiceModel');
+  if (minimaxModelEl) minimaxModelEl.value = s.minimaxVoiceModel || 'speech-2.8-turbo';
   document.getElementById('settingsUserName').value = s.userName || '';
   const notificationsEl = document.getElementById('settingsNotificationsEnabled');
   if (notificationsEl) notificationsEl.checked = s.notificationsEnabled !== false;
@@ -1901,6 +2103,8 @@ function saveSettings() {
   state.settings.provider  = document.getElementById('settingsProvider')?.value || state.settings.provider;
   state.settings.baseUrl   = document.getElementById('settingsBaseUrl')?.value?.trim() || '';
   state.settings.apiKey    = document.getElementById('settingsApiKey')?.value?.trim() || '';
+  state.settings.minimaxApiKey = document.getElementById('settingsMiniMaxApiKey')?.value?.trim() || '';
+  state.settings.minimaxVoiceModel = document.getElementById('settingsMiniMaxVoiceModel')?.value || 'speech-2.8-turbo';
   state.settings.model     = state.settings.provider === 'custom'
     ? (document.getElementById('settingsCustomModel')?.value?.trim() || state.settings.model)
     : (document.getElementById('settingsModel')?.value || state.settings.model);
@@ -2027,7 +2231,7 @@ function renderMemoryViewer() {
               <strong>${escHtml(msg.charName)}</strong>
               <span>${escHtml(formatShortTime(msg.ts))}</span>
             </div>
-            <div class="memory-favorite-body">${escHtml(msg.content || (msg.attachments?.length ? 'Photo message' : 'Saved message'))}</div>
+            <div class="memory-favorite-body">${escHtml(msg.content || getConversationPreviewText(msg) || 'Saved message')}</div>
           </div>
         </button>
       `).join('') : '<div class="memory-empty">Star messages in chat to save them here.</div>'}
@@ -2344,6 +2548,7 @@ function applyImportedStudioData(payload) {
   state.lineTab = 'chats';
   state.editingCharId = null;
   state.viewingCharacterId = null;
+  state.settingsCharId = null;
 
   saveState();
   applyWallpaper(state.wallpaper);
@@ -2472,6 +2677,9 @@ function renderCharacterProfile() {
       <div class="character-profile-copy-grid">
         <div><span>Mood</span><strong>${escHtml(normalized.mood || 'Not set')}</strong></div>
         <div><span>Last seen</span><strong>${escHtml(formatRelativeTime(getCharacterLastSeen(normalized.id)))}</strong></div>
+        <div><span>History Window</span><strong>${normalized.historyMessageCount} msgs</strong></div>
+        <div><span>World Book</span><strong>${escHtml(normalized.mountedWorldBookCategories.length ? normalized.mountedWorldBookCategories.join(', ') : 'All')}</strong></div>
+        <div><span>Voice</span><strong>${escHtml(normalized.minimaxVoiceId || 'Not set')}</strong></div>
         ${events.map(event => `<div><span>${escHtml(event.label)}</span><strong>${escHtml(event.value)}</strong></div>`).join('')}
       </div>
     </div>
@@ -2488,6 +2696,7 @@ function renderCharacterProfile() {
 
     <div class="character-profile-actions">
       <button class="btn btn-secondary" type="button" onclick="chatFromProfile('${normalized.id}')">Open Chat</button>
+      <button class="btn btn-secondary" type="button" onclick="openCharacterSettings('${normalized.id}')">Character Settings</button>
       <button class="btn btn-primary" type="button" onclick="editCharacterFromProfile('${normalized.id}')">Edit Character</button>
     </div>
   `;
@@ -2501,6 +2710,60 @@ function chatFromProfile(charId) {
 function editCharacterFromProfile(charId) {
   closeCharacterProfile();
   setTimeout(() => openEditCharSheet(charId), 120);
+}
+
+function openCharacterSettings(charId = state.viewingCharacterId || state.activeChat) {
+  const rawChar = state.characters.find(entry => entry.id === charId);
+  if (!rawChar) return;
+  const char = normalizeCharacter(rawChar);
+  if (state.viewingCharacterId === charId) {
+    closeCharacterProfile();
+  }
+  state.settingsCharId = charId;
+  document.getElementById('charSettingsName').textContent = `${char.name} Settings`;
+  document.getElementById('charSettingsOpeningLines').value = stringifyLineList(char.openingLines);
+  document.getElementById('charSettingsHistoryMessageCount').value = char.historyMessageCount;
+  document.getElementById('charSettingsWorldBookCategories').value = stringifyTagList(char.mountedWorldBookCategories);
+  document.getElementById('charSettingsMiniMaxVoiceId').value = char.minimaxVoiceId || '';
+  document.getElementById('charSettingsMiniMaxVoiceSpeed').value = char.minimaxVoiceSpeed || 1;
+  document.getElementById('charSettingsMiniMaxLanguage').value = char.minimaxLanguage || 'auto';
+  updateCharacterVoiceSpeedLabel(char.minimaxVoiceSpeed || 1);
+  document.getElementById('characterSettingsModal').classList.add('open');
+}
+
+function closeCharacterSettings(event) {
+  if (event && event.target !== document.getElementById('characterSettingsModal')) return;
+  document.getElementById('characterSettingsModal')?.classList.remove('open');
+  state.settingsCharId = null;
+}
+
+function updateCharacterVoiceSpeedLabel(value) {
+  const label = document.getElementById('charSettingsMiniMaxVoiceSpeedLabel');
+  if (!label) return;
+  label.textContent = `${Number(value || 1).toFixed(1)}x`;
+}
+
+function saveCharacterSettings() {
+  const char = state.characters.find(entry => entry.id === state.settingsCharId);
+  if (!char) return;
+  Object.assign(char, normalizeCharacter({
+    ...char,
+    openingLines: parseLineList(document.getElementById('charSettingsOpeningLines')?.value || ''),
+    historyMessageCount: Math.max(1, Math.min(50, Number(document.getElementById('charSettingsHistoryMessageCount')?.value || 12))),
+    mountedWorldBookCategories: parseTagList(document.getElementById('charSettingsWorldBookCategories')?.value || ''),
+    minimaxVoiceId: document.getElementById('charSettingsMiniMaxVoiceId')?.value?.trim() || '',
+    minimaxVoiceSpeed: Math.max(0.5, Math.min(2, Number(document.getElementById('charSettingsMiniMaxVoiceSpeed')?.value || 1))),
+    minimaxLanguage: document.getElementById('charSettingsMiniMaxLanguage')?.value || 'auto',
+  }));
+  saveState();
+  renderContactsList();
+  if (state.currentApp === 'messages') {
+    renderLINEConvList();
+    if (state.activeChat === char.id) updateLineVoiceNoteButton();
+  }
+  if (state.viewingCharacterId === char.id) renderCharacterProfile();
+  closeCharacterSettings();
+  showToast('Character settings saved');
 }
 
 function filterContacts(val) {
@@ -2641,6 +2904,12 @@ function saveCharacter() {
     autoMessageEnabled,
     autoMessageIntervalMinutes,
     lastAutoMessageAt: existingChar?.lastAutoMessageAt || 0,
+    openingLines: existingChar?.openingLines || [],
+    historyMessageCount: existingChar?.historyMessageCount || 12,
+    mountedWorldBookCategories: existingChar?.mountedWorldBookCategories || [],
+    minimaxVoiceId: existingChar?.minimaxVoiceId || '',
+    minimaxVoiceSpeed: existingChar?.minimaxVoiceSpeed || 1,
+    minimaxLanguage: existingChar?.minimaxLanguage || 'auto',
     closeness,
     mood,
     availability,
