@@ -26,7 +26,7 @@ const state = {
     boundaries: '',
   },
   settings: {
-    provider: 'anthropic',     // 'anthropic' | 'openai' | 'groq' | 'custom'
+    provider: 'anthropic',     // 'anthropic' | 'openai' | 'google' | 'groq' | 'custom'
     baseUrl: '',               // only used for 'custom'
     apiKey: '',
     model: 'claude-sonnet-4-6',
@@ -64,6 +64,15 @@ const PROVIDERS = {
     modelsPath: '/models',
     format: 'openai',
     defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+  },
+  google: {
+    label: 'Google AI Studio (Gemini)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    chatPath: '/chat/completions',
+    modelsPath: '/models',
+    format: 'openai',
+    auth: 'bearer',
+    defaultModels: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
   },
   groq: {
     label: 'Groq',
