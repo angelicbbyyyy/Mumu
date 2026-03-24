@@ -1106,6 +1106,58 @@ function appendMsg(role, content) {
   return msg;
 }
 
+function splitAssistantReplyIntoMessages(content) {
+  const raw = String(content || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return [''];
+
+  const paragraphChunks = raw
+    .split(/\n{2,}/)
+    .map(chunk => chunk.trim())
+    .filter(Boolean);
+
+  const chunks = paragraphChunks.length ? paragraphChunks : [raw];
+  const normalized = [];
+
+  chunks.forEach(chunk => {
+    // If the model returns several short single-line texts, keep them as separate bubbles.
+    const lines = chunk
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    if (lines.length > 1 && lines.every(line => line.length <= 120 && !/[.!?]["')\]]?\s+[A-Z]/.test(line))) {
+      normalized.push(...lines);
+      return;
+    }
+
+    normalized.push(chunk);
+  });
+
+  return normalized.length ? normalized : [raw];
+}
+
+function appendAssistantReplyMessages(charId, content, { read = false } = {}) {
+  if (!state.conversations[charId]) {
+    state.conversations[charId] = [];
+  }
+
+  const parts = splitAssistantReplyIntoMessages(content);
+  const baseTs = Date.now();
+  const created = parts.map((part, index) => {
+    const msg = normalizeConversationMessage({
+      role: 'assistant',
+      content: part,
+      ts: baseTs + index,
+      read,
+    });
+    state.conversations[charId].push(msg);
+    return msg;
+  });
+
+  saveState();
+  return created;
+}
+
 function renderMessageInner(msg) {
   const attachments = msg.attachments || [];
   const images = attachments
@@ -1192,15 +1244,14 @@ async function sendLineMessage() {
     const reply = await callAPI(state.activeChat);
     removeTypingIndicator();
     markLastUserMsgRead();
-    const incoming = appendMsg('assistant', reply);
-    incoming.read = true;
-    saveState();
+    appendAssistantReplyMessages(state.activeChat, reply, { read: true });
     renderLINEMessages();
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
+      const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
       showPushNotification({
         title: char?.name || 'New message',
-        body: reply || 'Sent you a message',
+        body: preview || 'Sent you a message',
         charId: state.activeChat,
         avatar: char?.avatar || '💬',
       });
@@ -1385,20 +1436,16 @@ async function runProactiveMessageTick() {
   proactiveMessageInFlight = true;
   try {
     const reply = await callAPI(nextChar.id, { mode: 'proactive' });
-    const msg = normalizeConversationMessage({
-      role: 'assistant',
-      content: reply,
-      ts: Date.now(),
+    const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
+    appendAssistantReplyMessages(nextChar.id, reply, {
       read: state.currentApp === 'messages' && state.activeChat === nextChar.id,
     });
-    if (!state.conversations[nextChar.id]) state.conversations[nextChar.id] = [];
-    state.conversations[nextChar.id].push(msg);
     const liveChar = state.characters.find(char => char.id === nextChar.id);
     if (liveChar) liveChar.lastAutoMessageAt = Date.now();
     saveState();
     showPushNotification({
       title: nextChar.name,
-      body: reply || 'Sent you a message',
+      body: preview || 'Sent you a message',
       charId: nextChar.id,
       avatar: nextChar.avatar || '💬',
     });
