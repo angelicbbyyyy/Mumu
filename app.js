@@ -278,60 +278,9 @@ function containsCJKText(text) {
   return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(text || ''));
 }
 
-function getVoiceIdLanguagePrefix(language) {
-  const normalized = String(language || '').trim().toLowerCase();
-  const map = {
-    english: 'English_',
-    japanese: 'Japanese_',
-    korean: 'Korean_',
-    italian: 'Italian_',
-    spanish: 'Spanish_',
-    french: 'French_',
-    german: 'German_',
-    portuguese: 'Portuguese_',
-    chinese: 'Chinese (Mandarin)',
-  };
-  return map[normalized] || '';
-}
-
-function isSystemMiniMaxVoiceId(voiceId) {
-  const prefixes = [
-    'English_',
-    'Japanese_',
-    'Korean_',
-    'Italian_',
-    'Spanish_',
-    'French_',
-    'German_',
-    'Portuguese_',
-    'Chinese (Mandarin)',
-    'Cantonese_',
-    'Indonesian_',
-    'Russian_',
-    'Arabic_',
-    'Turkish_',
-    'Ukrainian_',
-    'Thai_',
-    'Polish_',
-    'Romanian_',
-    'Greek_',
-    'Czech_',
-    'Finnish_',
-    'Hindi_',
-    'Dutch_',
-    'Vietnamese_',
-  ];
-  return prefixes.some(prefix => String(voiceId || '').startsWith(prefix));
-}
-
 function ensureVoiceIdMatchesLanguage(char, spokenLanguage) {
   const voiceId = String(char?.minimaxVoiceId || '').trim();
   if (!voiceId) throw new Error('Set a MiniMax voice ID for this character first.');
-  if (!isSystemMiniMaxVoiceId(voiceId)) return;
-  const expectedPrefix = getVoiceIdLanguagePrefix(spokenLanguage);
-  if (!expectedPrefix) return;
-  if (voiceId.startsWith(expectedPrefix)) return;
-  throw new Error(`This character is set to speak ${spokenLanguage}, but the current MiniMax voice_id is not a ${spokenLanguage} voice. Use a ${expectedPrefix}... voice_id.`);
 }
 
 function normalizeConversationMessage(raw = {}) {
