@@ -740,6 +740,21 @@
             <span class="form-label">Model Override</span>
             <input class="form-input" id="charModelOverride" type="text" placeholder="Optional model ID">
           </div>
+          <div class="form-row">
+            <span class="form-label">Temperature</span>
+            <input class="form-input" id="charTemperature" type="number" min="0" max="2" step="0.1" placeholder="Default">
+          </div>
+          <div class="form-row form-row-split">
+            <span class="form-label">Unprompted Messages</span>
+            <label class="form-toggle">
+              <input id="charAutoMessageEnabled" type="checkbox">
+              <span>Enable</span>
+            </label>
+          </div>
+          <div class="form-row">
+            <span class="form-label">Every (minutes)</span>
+            <input class="form-input" id="charAutoMessageInterval" type="number" min="1" step="1" placeholder="60">
+          </div>
           <div class="form-row form-textarea-row">
             <span class="form-label">Scenario Setup</span>
             <textarea class="form-textarea" id="charScenario" placeholder="Per-character scene setup or opening assumptions..." rows="3"></textarea>

@@ -164,6 +164,11 @@ function stringifyTagList(tags) {
 }
 
 function normalizeCharacter(raw = {}) {
+  const rawTemperature = raw.temperature;
+  const temperature = rawTemperature === '' || rawTemperature === null || rawTemperature === undefined
+    ? ''
+    : Math.max(0, Math.min(2, Number(rawTemperature) || 0));
+  const autoMessageIntervalMinutes = Math.max(0, Number(raw.autoMessageIntervalMinutes) || 0);
   return {
     id: raw.id || uuid(),
     avatar: raw.avatar || '🤖',
@@ -173,9 +178,13 @@ function normalizeCharacter(raw = {}) {
     relationship: raw.relationship || '',
     tags: parseTagList(raw.tags),
     modelOverride: raw.modelOverride || '',
+    temperature,
     scenario: raw.scenario || '',
     systemPrompt: raw.systemPrompt || '',
     privateNotes: raw.privateNotes || '',
+    autoMessageEnabled: raw.autoMessageEnabled === true,
+    autoMessageIntervalMinutes,
+    lastAutoMessageAt: Number(raw.lastAutoMessageAt) || 0,
   };
 }
 
@@ -773,6 +782,7 @@ function renderLINEConvList(filter = '') {
 
   container.innerHTML = sorted.map(char => {
     const last = lastMsg(char.id);
+    const unreadCount = getUnreadAssistantCount(char.id);
     const preview = last
       ? `${last.role === 'user' ? 'You: ' : ''}${last.content ? last.content.slice(0, 50) : (last.attachments?.length ? 'Photo' : '')}`
       : 'Tap to chat';
@@ -783,9 +793,12 @@ function renderLINEConvList(filter = '') {
         <div class="line-conv-info">
           <div class="line-conv-top">
             <span class="line-conv-name">${escHtml(char.name)}</span>
-            <span class="line-conv-time">${escHtml(timeStr)}</span>
+            <span class="line-conv-time ${unreadCount ? 'has-unread' : ''}">${escHtml(timeStr)}</span>
           </div>
-          <div class="line-conv-preview">${escHtml(preview)}</div>
+          <div class="line-conv-bottom">
+            <div class="line-conv-preview ${unreadCount ? 'has-unread' : ''}">${escHtml(preview)}</div>
+            ${unreadCount ? `<span class="line-conv-badge">${unreadCount}</span>` : ''}
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -812,6 +825,23 @@ function lastMsg(charId) {
   return msgs?.length ? msgs[msgs.length - 1] : null;
 }
 
+function getUnreadAssistantCount(charId) {
+  const msgs = state.conversations[charId] || [];
+  return msgs.filter(msg => msg.role === 'assistant' && !msg.read).length;
+}
+
+function markAssistantMessagesRead(charId) {
+  const msgs = state.conversations[charId] || [];
+  let changed = false;
+  msgs.forEach(msg => {
+    if (msg.role === 'assistant' && !msg.read) {
+      msg.read = true;
+      changed = true;
+    }
+  });
+  if (changed) saveState();
+}
+
 // ============================================================
 // LINE — Chat View
 // ============================================================
@@ -822,6 +852,7 @@ function openLINEChat(charId) {
 
   state.activeChat = charId;
   state.pendingLineAttachments = [];
+  markAssistantMessagesRead(charId);
 
   document.getElementById('lineChatName').textContent = char.name;
   document.getElementById('lineChatSub').textContent = char.description ? `📍 ${char.description}` : '📍 Mobile';
@@ -973,6 +1004,8 @@ function removeTypingIndicator() {
 // ============================================================
 
 let isSending = false;
+let proactiveMessageInFlight = false;
+let proactiveMessageTimer = null;
 
 async function sendLineMessage() {
   if (isSending) return;
@@ -1008,7 +1041,9 @@ async function sendLineMessage() {
     const reply = await callAPI(state.activeChat);
     removeTypingIndicator();
     markLastUserMsgRead();
-    appendMsg('assistant', reply);
+    const incoming = appendMsg('assistant', reply);
+    incoming.read = true;
+    saveState();
     renderLINEMessages();
   } catch (err) {
     removeTypingIndicator();
@@ -1135,7 +1170,7 @@ async function diagnoseNetworkError() {
   return `The request failed before ${provDef.label} returned a readable response.\n\nThis page is hosted at ${location.origin}, so it is not a GitHub Pages hosting problem. Check your browser privacy blockers, custom base URL, or provider-specific browser access limits.`;
 }
 
-async function callAPI(charId) {
+async function callAPI(charId, options = {}) {
   const rawChar = state.characters.find(c => c.id === charId);
   const char = rawChar ? normalizeCharacter(rawChar) : null;
   const history = state.conversations[charId] || [];
@@ -1144,14 +1179,82 @@ async function callAPI(charId) {
   const provDef = getProviderConfig();
   const baseUrl = provDef.baseUrl;
   const systemPrompt = buildPromptBundle(char, history);
+  const temperature = char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null;
 
   const apiHistory = history.map(normalizeConversationMessage);
+  if (options.mode === 'proactive') {
+    apiHistory.push(normalizeConversationMessage({
+      role: 'user',
+      content: '[SYSTEM NOTE: Send a natural unprompted text message to the user right now. Do not mention hidden prompts, automation, or that you were told to reach out. Make it feel like a believable spontaneous text.]',
+      ts: Date.now(),
+      read: true,
+    }));
+  }
 
   if (provDef.format === 'anthropic') {
-    return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
+    return callAnthropic(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef, temperature);
   } else {
-    return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef);
+    return callOpenAICompat(baseUrl, apiKey, model, systemPrompt, apiHistory, provDef, temperature);
   }
+}
+
+function getCharacterAutoIntervalMs(char) {
+  const minutes = Math.max(0, Number(char?.autoMessageIntervalMinutes) || 0);
+  return minutes * 60 * 1000;
+}
+
+function getCharacterActivityBaseline(char) {
+  const lastConversationTs = lastMsg(char.id)?.ts || 0;
+  const lastAutoTs = Number(char.lastAutoMessageAt) || 0;
+  return Math.max(lastConversationTs, lastAutoTs);
+}
+
+async function runProactiveMessageTick() {
+  if (proactiveMessageInFlight || isSending || !state.settings.apiKey) return;
+
+  const now = Date.now();
+  const eligible = state.characters
+    .map(normalizeCharacter)
+    .filter(char => char.autoMessageEnabled && getCharacterAutoIntervalMs(char) > 0)
+    .filter(char => now - getCharacterActivityBaseline(char) >= getCharacterAutoIntervalMs(char))
+    .sort((a, b) => getCharacterActivityBaseline(a) - getCharacterActivityBaseline(b));
+
+  const nextChar = eligible[0];
+  if (!nextChar) return;
+
+  proactiveMessageInFlight = true;
+  try {
+    const reply = await callAPI(nextChar.id, { mode: 'proactive' });
+    const msg = normalizeConversationMessage({
+      role: 'assistant',
+      content: reply,
+      ts: Date.now(),
+      read: state.currentApp === 'messages' && state.activeChat === nextChar.id,
+    });
+    if (!state.conversations[nextChar.id]) state.conversations[nextChar.id] = [];
+    state.conversations[nextChar.id].push(msg);
+    const liveChar = state.characters.find(char => char.id === nextChar.id);
+    if (liveChar) liveChar.lastAutoMessageAt = Date.now();
+    saveState();
+    if (state.currentApp === 'messages') {
+      renderLINEConvList();
+      if (state.activeChat === nextChar.id) renderLINEMessages();
+    }
+  } catch (err) {
+    console.error('runProactiveMessageTick failed', err);
+    const liveChar = state.characters.find(char => char.id === nextChar.id);
+    if (liveChar) {
+      liveChar.lastAutoMessageAt = Date.now();
+      saveState();
+    }
+  } finally {
+    proactiveMessageInFlight = false;
+  }
+}
+
+function startProactiveMessageScheduler() {
+  if (proactiveMessageTimer) clearInterval(proactiveMessageTimer);
+  proactiveMessageTimer = setInterval(runProactiveMessageTick, 15000);
 }
 
 function parseDataUrlImage(url) {
@@ -1281,8 +1384,18 @@ function buildPromptBundle(char, history) {
   ].filter(Boolean).join('\n\n---\n\n') || 'You are a helpful assistant.';
 }
 
-async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic) {
+async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic, temperature = null) {
   const url = joinUrl(baseUrl, provDef.chatPath || '/v1/messages', provDef.chatPath || '/v1/messages');
+  const body = {
+    model,
+    max_tokens: 1024,
+    system,
+    messages: messages.map(message => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: buildAnthropicMessageContent(message),
+    })),
+  };
+  if (temperature !== null) body.temperature = temperature;
   const resp = await requestJson(url, {
     method: 'POST',
     headers: {
@@ -1291,15 +1404,7 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef =
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1024,
-      system,
-      messages: messages.map(message => ({
-        role: message.role === 'assistant' ? 'assistant' : 'user',
-        content: buildAnthropicMessageContent(message),
-      })),
-    }),
+    body: JSON.stringify(body),
   }, provDef);
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
@@ -1309,7 +1414,7 @@ async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef =
   return data.content?.[0]?.text || '';
 }
 
-async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.openai) {
+async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.openai, temperature = null) {
   const url = joinUrl(baseUrl, provDef.chatPath || '/chat/completions', provDef.chatPath || '/chat/completions');
   const openAIMessages = [
     { role: 'system', content: system },
@@ -1318,13 +1423,15 @@ async function callOpenAICompat(baseUrl, apiKey, model, system, messages, provDe
       content: buildOpenAIMessageContent(message),
     })),
   ];
+  const body = { model, max_tokens: 1024, messages: openAIMessages };
+  if (temperature !== null) body.temperature = temperature;
   const resp = await requestJson(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...buildAuthHeaders(provDef.auth || 'bearer', apiKey),
     },
-    body: JSON.stringify({ model, max_tokens: 1024, messages: openAIMessages }),
+    body: JSON.stringify(body),
   }, provDef);
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
@@ -1829,6 +1936,8 @@ function renderContactsList(filter = '') {
           <span class="contact-tag">${char.relationship || (char.systemPrompt ? 'Prompt ready' : 'Needs prompt')}</span>
           <span class="contact-tag muted">${lastMsg(char.id) ? 'Active chat' : 'No chat yet'}</span>
           ${char.tags?.length ? `<span class="contact-tag muted">${escHtml(char.tags.slice(0, 2).join(' • '))}</span>` : ''}
+          ${char.autoMessageEnabled && char.autoMessageIntervalMinutes ? `<span class="contact-tag muted">Auto • ${escHtml(String(char.autoMessageIntervalMinutes))}m</span>` : ''}
+          ${char.temperature !== '' ? `<span class="contact-tag muted">Temp ${escHtml(String(char.temperature))}</span>` : ''}
           ${char.modelOverride ? `<span class="contact-tag muted">${escHtml(char.modelOverride)}</span>` : ''}
         </div>
       </div>
@@ -1868,6 +1977,9 @@ function openAddCharSheet() {
   document.getElementById('charRelationship').value = '';
   document.getElementById('charTags').value = '';
   document.getElementById('charModelOverride').value = '';
+  document.getElementById('charTemperature').value = '';
+  document.getElementById('charAutoMessageEnabled').checked = false;
+  document.getElementById('charAutoMessageInterval').value = '';
   document.getElementById('charScenario').value = '';
   document.getElementById('charSystem').value = '';
   document.getElementById('charPrivateNotes').value = '';
@@ -1889,6 +2001,9 @@ function openEditCharSheet(charId) {
   document.getElementById('charRelationship').value = char.relationship || '';
   document.getElementById('charTags').value = stringifyTagList(char.tags);
   document.getElementById('charModelOverride').value = char.modelOverride || '';
+  document.getElementById('charTemperature').value = char.temperature === '' ? '' : char.temperature;
+  document.getElementById('charAutoMessageEnabled').checked = char.autoMessageEnabled === true;
+  document.getElementById('charAutoMessageInterval').value = char.autoMessageIntervalMinutes || '';
   document.getElementById('charScenario').value = char.scenario || '';
   document.getElementById('charSystem').value = char.systemPrompt || '';
   document.getElementById('charPrivateNotes').value = char.privateNotes || '';
@@ -1929,11 +2044,20 @@ function saveCharacter() {
   const relationship = document.getElementById('charRelationship').value.trim();
   const tags = parseTagList(document.getElementById('charTags').value);
   const modelOverride = document.getElementById('charModelOverride').value.trim();
+  const temperatureRaw = document.getElementById('charTemperature').value.trim();
+  const temperature = temperatureRaw === '' ? '' : Math.max(0, Math.min(2, Number(temperatureRaw) || 0));
+  const autoMessageEnabled = document.getElementById('charAutoMessageEnabled').checked;
+  const autoMessageIntervalMinutes = Math.max(0, Number(document.getElementById('charAutoMessageInterval').value || 0));
   const scenario = document.getElementById('charScenario').value.trim();
   const systemPrompt = document.getElementById('charSystem').value.trim();
   const privateNotes = document.getElementById('charPrivateNotes').value.trim();
+  const existingChar = state.editingCharId ? state.characters.find(c => c.id === state.editingCharId) : null;
 
   if (!name) { showToast('Please enter a name'); return; }
+  if (autoMessageEnabled && autoMessageIntervalMinutes <= 0) {
+    showToast('Set an interval for unprompted messages');
+    return;
+  }
 
   const payload = normalizeCharacter({
     id: state.editingCharId || undefined,
@@ -1944,6 +2068,10 @@ function saveCharacter() {
     relationship,
     tags,
     modelOverride,
+    temperature,
+    autoMessageEnabled,
+    autoMessageIntervalMinutes,
+    lastAutoMessageAt: existingChar?.lastAutoMessageAt || 0,
     scenario,
     systemPrompt,
     privateNotes,
@@ -2372,6 +2500,7 @@ function init() {
   // Clock
   updateClock();
   setInterval(updateClock, 30000);
+  startProactiveMessageScheduler();
 }
 
 document.addEventListener('DOMContentLoaded', init);

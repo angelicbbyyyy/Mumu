@@ -724,6 +724,12 @@ body {
   gap: 8px;
 }
 
+.line-conv-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .line-conv-name {
   font-size: 15px;
   font-weight: 700;
@@ -736,6 +742,11 @@ body {
   flex-shrink: 0;
 }
 
+.line-conv-time.has-unread {
+  color: var(--line-green);
+  font-weight: 700;
+}
+
 .line-conv-preview {
   font-size: 13px;
   line-height: 1.35;
@@ -743,6 +754,27 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+.line-conv-preview.has-unread {
+  color: #30363f;
+  font-weight: 600;
+}
+
+.line-conv-badge {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--line-green);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .line-attachment-preview {
@@ -2204,6 +2236,10 @@ body {
 
 .form-row:last-child { border-bottom: none; }
 
+.form-row-split {
+  justify-content: space-between;
+}
+
 .form-label {
   font-size: 15px;
   color: #000;
@@ -2223,6 +2259,20 @@ body {
 }
 
 .form-input::placeholder { color: var(--ios-gray3); }
+
+.form-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475467;
+  font-size: 14px;
+}
+
+.form-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--line-green);
+}
 
 .form-textarea-row {
   flex-direction: column;
