@@ -1782,13 +1782,39 @@ async function translateEnglishTextForVoice(charId, englishText, char) {
   };
 }
 
+async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fallbackEnglish = '') {
+  const cleanedSource = cleanVoiceTranslationText(spokenText);
+  const cleanedFallback = cleanVoiceTranslationText(fallbackEnglish);
+  if (!cleanedSource) return cleanedFallback;
+  if (String(spokenLanguage || '').trim().toLowerCase() === 'english') {
+    return cleanedSource;
+  }
+
+  const translated = await callProviderWithMessages(char, [
+    'You translate short chat voice notes into natural English.',
+    `Source language: ${spokenLanguage}.`,
+    'Preserve the meaning, tone, intimacy, and brevity of the original.',
+    'Return only the English translation with no notes, labels, markdown, or quotation marks.',
+  ].join('\n'), [
+    normalizeConversationMessage({
+      role: 'user',
+      content: cleanedSource,
+      ts: Date.now(),
+      read: true,
+    }),
+  ], 0.2);
+
+  return cleanVoiceTranslationText(translated) || cleanedFallback || cleanedSource;
+}
+
 async function createCharacterVoiceNoteAttachment(charId, englishText, char) {
   const canonicalEnglish = cleanVoiceTranslationText(englishText);
   const { spokenText, spokenLanguage } = await translateEnglishTextForVoice(charId, canonicalEnglish, char);
   ensureVoiceIdMatchesLanguage(char, spokenLanguage);
+  const translationEn = await translateVoiceTextToEnglish(spokenText, spokenLanguage, char, canonicalEnglish);
   const attachment = await generateMiniMaxVoiceAttachment(spokenText, char, {
     spokenLanguage,
-    translationEn: canonicalEnglish,
+    translationEn,
     sourceText: spokenText,
     displayStyle: 'voice-note',
     translationRevealed: false,
@@ -1873,7 +1899,10 @@ async function requestCharacterVoiceNote() {
   showToast('Generating voice note...');
 
   try {
-    const reply = await callAPI(state.activeChat, { mode: 'voice_note' });
+    const reply = await callAPI(state.activeChat, {
+      mode: 'voice_note',
+      targetLanguageForReply: getCharacterVoiceLanguageLabel(char),
+    });
     const voiceAttachment = await createCharacterVoiceNoteAttachment(state.activeChat, reply, char);
     removeTypingIndicator();
     appendSingleAssistantMessage(state.activeChat, reply, { read: true, attachments: [voiceAttachment] });
@@ -1999,9 +2028,12 @@ async function callAPI(charId, options = {}) {
       read: true,
     }));
   } else if (options.mode === 'voice_note') {
+    const targetLanguage = String(options.targetLanguageForReply || '').trim();
     apiHistory.push(normalizeConversationMessage({
       role: 'user',
-      content: '[SYSTEM NOTE: Send a short natural voice-note style reply. Keep it intimate, spoken, and concise. Do not narrate actions or mention hidden prompts.]',
+      content: targetLanguage
+        ? `[SYSTEM NOTE: Send a short natural voice-note style reply entirely in ${targetLanguage}. Keep it intimate, spoken, and concise. Do not use English unless the target language is English. Do not narrate actions or mention hidden prompts.]`
+        : '[SYSTEM NOTE: Send a short natural voice-note style reply. Keep it intimate, spoken, and concise. Do not narrate actions or mention hidden prompts.]',
       ts: Date.now(),
       read: true,
     }));
