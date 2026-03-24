@@ -193,6 +193,7 @@ function normalizeCharacter(raw = {}) {
   const autoMessageIntervalMinutes = Math.max(0, Number(raw.autoMessageIntervalMinutes) || 0);
   const historyMessageCount = Math.max(1, Math.min(50, Number(raw.historyMessageCount) || 12));
   const minimaxVoiceSpeed = Math.max(0.5, Math.min(2, Number(raw.minimaxVoiceSpeed) || 1));
+  const autoVoiceChance = Math.max(0, Math.min(100, Number(raw.autoVoiceChance) || 20));
   return {
     id: raw.id || uuid(),
     avatar: raw.avatar || '🤖',
@@ -215,6 +216,8 @@ function normalizeCharacter(raw = {}) {
     minimaxVoiceId: raw.minimaxVoiceId || '',
     minimaxVoiceSpeed,
     minimaxLanguage: raw.minimaxLanguage || 'auto',
+    autoVoiceEnabled: raw.autoVoiceEnabled === true,
+    autoVoiceChance,
     closeness: Math.max(0, Math.min(100, Number(raw.closeness) || 50)),
     mood: raw.mood || '',
     availability: ['available', 'busy', 'offline'].includes(raw.availability) ? raw.availability : 'available',
@@ -1436,7 +1439,7 @@ async function sendLineMessage() {
     removeTypingIndicator();
     markLastUserMsgRead();
     const shouldStage = state.currentApp === 'messages' && state.activeChat;
-    await deliverAssistantReply(state.activeChat, reply, { read: true, staged: shouldStage });
+    await deliverCharacterResponse(state.activeChat, reply, { read: true, staged: shouldStage });
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
       const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
@@ -1640,6 +1643,36 @@ async function requestCharacterVoiceNote() {
   }
 }
 
+function shouldGenerateCharacterVoiceNote(char, text) {
+  if (!char?.minimaxVoiceId) return false;
+  if (!char.autoVoiceEnabled) return false;
+  if (!state.settings.minimaxApiKey?.trim()) return false;
+
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 260) return false;
+  if (splitAssistantReplyIntoMessages(trimmed).length > 1) return false;
+
+  const chance = Math.max(0, Math.min(100, Number(char.autoVoiceChance) || 0));
+  return Math.random() * 100 < chance;
+}
+
+async function deliverCharacterResponse(charId, reply, { read = false, staged = false } = {}) {
+  const rawChar = state.characters.find(entry => entry.id === charId);
+  const char = normalizeCharacter(rawChar || {});
+
+  if (shouldGenerateCharacterVoiceNote(char, reply)) {
+    const voiceAttachment = await generateMiniMaxVoiceAttachment(reply, char);
+    appendSingleAssistantMessage(charId, reply, { read, attachments: [voiceAttachment] });
+    if (state.currentApp === 'messages' && state.activeChat === charId) {
+      renderLINEMessages();
+    }
+    return;
+  }
+
+  await deliverAssistantReply(charId, reply, { read, staged });
+}
+
 // ============================================================
 // Multi-Provider API Call
 // ============================================================
@@ -1758,7 +1791,7 @@ async function runProactiveMessageTick() {
   try {
     const reply = await callAPI(nextChar.id, { mode: 'proactive' });
     const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
-    await deliverAssistantReply(nextChar.id, reply, {
+    await deliverCharacterResponse(nextChar.id, reply, {
       read: state.currentApp === 'messages' && state.activeChat === nextChar.id,
       staged: state.currentApp === 'messages' && state.activeChat === nextChar.id,
     });
@@ -2746,6 +2779,8 @@ function openCharacterSettings(charId = state.viewingCharacterId || state.active
   document.getElementById('charSettingsHistoryMessageCount').value = char.historyMessageCount;
   document.getElementById('charSettingsWorldBookCategories').value = stringifyTagList(char.mountedWorldBookCategories);
   document.getElementById('charSettingsMiniMaxVoiceId').value = char.minimaxVoiceId || '';
+  document.getElementById('charSettingsAutoVoiceEnabled').checked = char.autoVoiceEnabled === true;
+  document.getElementById('charSettingsAutoVoiceChance').value = char.autoVoiceChance || 20;
   document.getElementById('charSettingsMiniMaxVoiceSpeed').value = char.minimaxVoiceSpeed || 1;
   document.getElementById('charSettingsMiniMaxLanguage').value = char.minimaxLanguage || 'auto';
   updateCharacterVoiceSpeedLabel(char.minimaxVoiceSpeed || 1);
@@ -2773,6 +2808,8 @@ function saveCharacterSettings() {
     historyMessageCount: Math.max(1, Math.min(50, Number(document.getElementById('charSettingsHistoryMessageCount')?.value || 12))),
     mountedWorldBookCategories: parseTagList(document.getElementById('charSettingsWorldBookCategories')?.value || ''),
     minimaxVoiceId: document.getElementById('charSettingsMiniMaxVoiceId')?.value?.trim() || '',
+    autoVoiceEnabled: document.getElementById('charSettingsAutoVoiceEnabled')?.checked === true,
+    autoVoiceChance: Math.max(0, Math.min(100, Number(document.getElementById('charSettingsAutoVoiceChance')?.value || 20))),
     minimaxVoiceSpeed: Math.max(0.5, Math.min(2, Number(document.getElementById('charSettingsMiniMaxVoiceSpeed')?.value || 1))),
     minimaxLanguage: document.getElementById('charSettingsMiniMaxLanguage')?.value || 'auto',
   }));
