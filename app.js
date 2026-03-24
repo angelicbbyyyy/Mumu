@@ -1130,23 +1130,17 @@ function splitAssistantReplyIntoMessages(content) {
       return;
     }
 
-    const sentenceGroups = chunk
-      .replace(/([.!?…]["')\]]?)(\s{2,})/g, '$1\n')
-      .split('\n')
-      .map(part => part.trim())
+    const candidateParts = (chunk.match(/[^.!?…]+[.!?…]+["')\]]*|[^.!?…]+$/g) || [chunk])
+      .map(sentence => sentence.trim())
       .filter(Boolean);
 
-    if (sentenceGroups.length > 1) {
-      const candidateParts = sentenceGroups.flatMap(group => {
-        const sentences = group.match(/[^.!?…]+[.!?…]+["')\]]*|[^.!?…]+$/g) || [group];
-        return sentences.map(sentence => sentence.trim()).filter(Boolean);
-      });
+    const shortChatLike = candidateParts.length > 1
+      && candidateParts.length <= 8
+      && candidateParts.every(part => part.length <= 120);
 
-      const shortChatLike = candidateParts.length <= 6 && candidateParts.every(part => part.length <= 120);
-      if (shortChatLike) {
-        normalized.push(...candidateParts);
-        return;
-      }
+    if (shortChatLike) {
+      normalized.push(...candidateParts);
+      return;
     }
 
     normalized.push(chunk);
