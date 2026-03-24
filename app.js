@@ -1913,9 +1913,15 @@ async function requestCharacterVoiceNote() {
   if (!state.activeChat || isSending) return;
   showNextVoiceDebugAlert = true;
   const rawChar = state.characters.find(entry => entry.id === state.activeChat);
-  const char = normalizeCharacter(rawChar || {});
+  const liveSettingsVoiceId = state.settingsCharId === state.activeChat
+    ? document.getElementById('charSettingsMiniMaxVoiceId')?.value?.trim() || ''
+    : '';
+  const char = normalizeCharacter({
+    ...(rawChar || {}),
+    minimaxVoiceId: liveSettingsVoiceId || rawChar?.minimaxVoiceId || '',
+  });
   if (!char.minimaxVoiceId) {
-    showToast('Set a MiniMax voice ID in Character Settings first');
+    alert(`No MiniMax voice_id is currently saved for ${char.name}.\n\nOpen Chat > ... > Character Settings, paste the voice_id, and tap Save.`);
     return;
   }
 
