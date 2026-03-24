@@ -1533,6 +1533,7 @@ function removeTypingIndicator() {
 let isSending = false;
 let proactiveMessageInFlight = false;
 let proactiveMessageTimer = null;
+let showNextVoiceDebugAlert = false;
 
 async function sendLineMessage() {
   if (isSending) return;
@@ -1846,6 +1847,16 @@ function logVoiceNoteDebug(stage, payload) {
   };
   window.__lastVoiceNoteDebug = debugPayload;
   console.info('[voice-note-debug]', debugPayload);
+  if (showNextVoiceDebugAlert) {
+    showNextVoiceDebugAlert = false;
+    alert([
+      `[voice-note-debug] ${stage}`,
+      `language: ${debugPayload.spokenLanguage || ''}`,
+      `voice_id: ${debugPayload.voiceId || ''}`,
+      `spoken: ${debugPayload.spokenText || ''}`,
+      `translation: ${debugPayload.translationEn || ''}`,
+    ].join('\n\n'));
+  }
 }
 
 async function createVoiceNoteAttachmentFromSpokenText(spokenText, char, fallbackEnglish = '') {
@@ -1951,6 +1962,7 @@ async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
 
 async function requestCharacterVoiceNote() {
   if (!state.activeChat || isSending) return;
+  showNextVoiceDebugAlert = true;
   const rawChar = state.characters.find(entry => entry.id === state.activeChat);
   const char = normalizeCharacter(rawChar || {});
   if (!char.minimaxVoiceId) {
