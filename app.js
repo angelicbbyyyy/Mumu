@@ -1200,6 +1200,11 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
 
   const created = [];
   for (let index = 0; index < parts.length; index += 1) {
+    if (state.currentApp === 'messages' && state.activeChat === charId) {
+      renderLINEMessages();
+      await nextFrame();
+    }
+
     if (index > 0) {
       showTypingIndicator();
       await nextFrame();
@@ -1220,6 +1225,8 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
     saveState();
     if (state.currentApp === 'messages' && state.activeChat === charId) {
       renderLINEMessages();
+      await nextFrame();
+      await wait(80);
     }
   }
 
@@ -1315,7 +1322,6 @@ async function sendLineMessage() {
     markLastUserMsgRead();
     const shouldStage = state.currentApp === 'messages' && state.activeChat;
     await deliverAssistantReply(state.activeChat, reply, { read: true, staged: shouldStage });
-    renderLINEMessages();
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
       const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
