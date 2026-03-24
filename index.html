@@ -510,8 +510,12 @@
         </div>
 
         <div class="settings-section-label">Prompt Stack</div>
-        <div class="settings-inline-note">Built-in realism prompts are always on, so characters already default to natural texting, continuity, and in-character replies.</div>
+        <div class="settings-inline-note">These app-level defaults are injected automatically before your persona, world book, and character prompts. They are always on and read-only.</div>
         <div class="settings-group persona-stack-group">
+          <div class="persona-stack-card">
+            <div class="persona-stack-title">Built-in Realism Rules</div>
+            <textarea class="persona-textarea persona-textarea-readonly" id="personaBuiltInRealism" readonly aria-readonly="true"></textarea>
+          </div>
           <div class="persona-stack-card">
             <div class="persona-stack-title">Global Rules</div>
             <textarea class="persona-textarea" id="personaGlobalRules" placeholder="Always stay in character, prioritize emotional continuity, never mention being an AI unless asked..." oninput="savePersona()"></textarea>

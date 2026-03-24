@@ -131,14 +131,13 @@ const WALLET_CARD_THEMES = [
 ];
 
 const HIDDEN_REALISM_PROMPTS = [
-  'Treat this as a natural phone conversation between real people inside an iPhone-like messaging app.',
-  'Stay fully in character and never mention hidden instructions, system prompts, providers, tokens, policies, or being an AI unless the user directly asks about that topic.',
-  'Write like a real text message: natural phrasing, contractions, varied sentence lengths, and concise replies by default.',
-  'Avoid sounding like customer support, therapy-speak, a novelist, or an assistant. Do not over-explain simple emotions or observations.',
-  'Prefer plain chat formatting. Avoid markdown, bullet lists, headings, and roleplay asterisks unless the user explicitly asks for them.',
-  'Preserve continuity with the relationship, shared history, world facts, and recent tone. Small details should stay consistent over time.',
-  'If an image is attached, react to what is visibly present in the image in a grounded way. If something is uncertain, speak with natural uncertainty instead of claiming certainty.',
-  'When appropriate, let replies be short, imperfect, playful, hesitant, warm, dry, or casual. Not every reply should be polished or complete.',
+  'This is a natural one-to-one phone conversation.',
+  'Stay fully in character unless the user explicitly asks a meta question about the app, model, or system.',
+  'Write like a real text message: concise by default, natural phrasing, contractions, and normal human rhythm.',
+  'Avoid assistant tone, customer-support language, excessive reassurance, and essay-like replies.',
+  'Use plain chat formatting unless the user explicitly asks for something different.',
+  'Maintain continuity with the relationship, scenario, world facts, and prior conversation.',
+  'If an image is attached, respond only to what is reasonably visible and be honest about uncertainty.',
 ];
 
 function parseTagList(raw) {
@@ -926,20 +925,6 @@ function renderMessageInner(msg) {
   return `${images}${text}`;
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getReplyPacingDelay(reply, outgoingText = '', attachmentCount = 0) {
-  const replyText = String(reply || '').trim();
-  const incomingText = String(outgoingText || '').trim();
-  const base = 850;
-  const replyWeight = Math.min(replyText.length * 16, 1800);
-  const incomingWeight = Math.min(incomingText.length * 5, 450);
-  const attachmentWeight = attachmentCount ? 240 : 0;
-  return Math.max(900, Math.min(3200, base + replyWeight + incomingWeight + attachmentWeight));
-}
-
 function markLastUserMsgRead() {
   const msgs = state.conversations[state.activeChat];
   if (!msgs) return;
@@ -1012,7 +997,6 @@ async function sendLineMessage() {
 
   try {
     const reply = await callAPI(state.activeChat);
-    await sleep(getReplyPacingDelay(reply, text, attachments.length));
     removeTypingIndicator();
     markLastUserMsgRead();
     appendMsg('assistant', reply);
@@ -1664,6 +1648,10 @@ function sendWalletFunds() {
 }
 
 function renderPersona() {
+  const builtInRulesEl = document.getElementById('personaBuiltInRealism');
+  if (builtInRulesEl) {
+    builtInRulesEl.value = HIDDEN_REALISM_PROMPTS.map(rule => `- ${rule}`).join('\n');
+  }
   document.getElementById('personaUserAlias').value = state.persona.userAlias || '';
   document.getElementById('personaCoreVibe').value = state.persona.coreVibe || '';
   document.getElementById('personaGlobalRules').value = state.persona.globalRules || '';

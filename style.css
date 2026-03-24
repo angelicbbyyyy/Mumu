@@ -1929,10 +1929,10 @@ body {
   margin: 0 16px 16px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255,255,255,0.82);
-  color: #5f6878;
+  background: rgba(255,255,255,0.88);
+  color: #5b6473;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   box-shadow: 0 6px 18px rgba(15,23,42,0.04);
 }
 
@@ -1992,6 +1992,17 @@ body {
   line-height: 1.55;
   color: #111827;
   background: transparent;
+}
+
+.persona-textarea-readonly {
+  min-height: 148px;
+  color: #475163;
+  line-height: 1.65;
+  resize: none;
+}
+
+.persona-textarea-readonly:focus {
+  outline: none;
 }
 
 .persona-textarea::placeholder {
