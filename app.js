@@ -1859,7 +1859,22 @@ async function generateSpokenVoiceReply(charId, char) {
       : 'Do not use interjection tags in this reply.',
   ].join('\n\n');
 
-  const rawReply = await callProviderWithMessages(char, voicePrompt, history, char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null);
+  const voiceMessages = [
+    ...history,
+    normalizeConversationMessage({
+      role: 'user',
+      content: `[SYSTEM NOTE: Generate the voice note now. Reply only with the final spoken ${spokenLanguage} text for the character's next voice message.]`,
+      ts: Date.now(),
+      read: true,
+    }),
+  ];
+
+  const rawReply = await callProviderWithMessages(
+    char,
+    voicePrompt,
+    voiceMessages,
+    char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null,
+  );
   const spokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(rawReply));
   if (!spokenText) {
     throw new Error('Voice note generation returned empty text.');
