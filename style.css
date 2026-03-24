@@ -1176,6 +1176,10 @@ body {
   cursor: default;
 }
 
+.line-nav-btn.is-unconfigured {
+  color: #9aa3af;
+}
+
 /* Messages area */
 .line-messages-area {
   flex: 1;

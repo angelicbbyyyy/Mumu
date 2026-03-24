@@ -1524,9 +1524,10 @@ function updateLineVoiceNoteButton() {
   const btn = document.getElementById('lineVoiceNoteBtn');
   if (!btn) return;
   const char = state.characters.find(entry => entry.id === state.activeChat);
-  const enabled = !!normalizeCharacter(char || {}).minimaxVoiceId;
-  btn.disabled = !state.activeChat || !enabled || isSending;
+  const configured = !!normalizeCharacter(char || {}).minimaxVoiceId;
+  btn.disabled = !state.activeChat || isSending;
   btn.classList.toggle('is-disabled', btn.disabled);
+  btn.classList.toggle('is-unconfigured', !configured && !!state.activeChat);
 }
 
 async function maybeSendCharacterOpeningLines(charId) {
