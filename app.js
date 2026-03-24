@@ -1417,18 +1417,19 @@ function renderModelSelect() {
   const provDef = getProviderConfig();
   const models = provDef.defaultModels;
 
-  // Keep existing options if they were fetched, just ensure current model is there
-  const existing = Array.from(select.options).map(o => o.value);
-  if (state.settings.provider === 'custom' && state.settings.model && !existing.includes(state.settings.model)) {
-    select.innerHTML = `<option value="${escHtml(state.settings.model)}">${escHtml(state.settings.model)}</option>`;
-  } else if (!existing.length || !existing.includes(state.settings.model)) {
-    select.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  if (state.settings.provider === 'custom') {
+    const customModel = state.settings.model || '';
+    select.innerHTML = customModel
+      ? `<option value="${escHtml(customModel)}">${escHtml(customModel)}</option>`
+      : '';
+    if (customModel) select.value = customModel;
+    return;
   }
-  if (state.settings.model) {
-    if ([...select.options].some(o => o.value === state.settings.model)) {
-      select.value = state.settings.model;
-    }
-  }
+
+  select.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  const selectedModel = models.includes(state.settings.model) ? state.settings.model : (models[0] || '');
+  state.settings.model = selectedModel;
+  if (selectedModel) select.value = selectedModel;
 }
 
 function onProviderChange(doSave = true) {
@@ -1441,6 +1442,8 @@ function onProviderChange(doSave = true) {
   if (rowBaseUrl) rowBaseUrl.style.display = provider === 'custom' ? '' : 'none';
   const customGroup = document.getElementById('customProviderGroup');
   if (customGroup) customGroup.style.display = provider === 'custom' ? '' : 'none';
+  const googleGroup = document.getElementById('googleProviderGroup');
+  if (googleGroup) googleGroup.style.display = provider === 'google' ? '' : 'none';
   const customModelRow = document.getElementById('customModelRow');
   if (customModelRow) customModelRow.style.display = provider === 'custom' ? '' : 'none';
 
@@ -1453,7 +1456,13 @@ function onProviderChange(doSave = true) {
     }
   }
 
-  // Reset model options to provider defaults
+  if (provider !== 'custom') {
+    const providerModels = PROVIDERS[provider]?.defaultModels || [];
+    if (!providerModels.includes(state.settings.model)) {
+      state.settings.model = providerModels[0] || '';
+    }
+  }
+
   renderModelSelect();
 
   if (doSave) saveSettings();
@@ -1469,6 +1478,11 @@ function saveSettings() {
   state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
   state.settings.memoryNote = document.getElementById('settingsMemoryNote')?.value?.trim() || '';
   saveState();
+}
+
+function saveSettingsAndConfirm() {
+  saveSettings();
+  showToast('Studio settings saved');
 }
 
 function ensureWalletCharacterBalance(charId) {

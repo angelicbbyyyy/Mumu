@@ -547,7 +547,7 @@
           <svg viewBox="0 0 12 20" fill="none" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
         </button>
         <span class="app-nav-title">Studio</span>
-        <div style="width:44px;"></div>
+        <button class="app-nav-action" onclick="saveSettingsAndConfirm()" style="color:#007AFF;font-size:15px;font-weight:600;background:none;border:none;cursor:pointer;">Save</button>
       </div>
 
       <div class="settings-scroll">
@@ -583,6 +583,11 @@
         <div class="settings-group" id="customProviderGroup" style="display:none;">
           <div class="settings-row-help">
             Custom works best with OpenAI-compatible APIs that support browser requests.
+          </div>
+        </div>
+        <div class="settings-group" id="googleProviderGroup" style="display:none;">
+          <div class="settings-row-help">
+            Use your Google AI Studio key here. The Gemini preset uses Google's OpenAI-compatible base URL automatically.
           </div>
         </div>
 
