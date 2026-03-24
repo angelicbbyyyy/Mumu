@@ -313,6 +313,20 @@ body {
   display: block;
 }
 
+.contacts-dock-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contacts-dock-icon-svg {
+  width: 56px;
+  height: 56px;
+  display: block;
+}
+
 .icon-wallet {
   background:
     radial-gradient(circle at 42% 15%, rgba(255,255,255,0.22), transparent 24%),
