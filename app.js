@@ -1213,6 +1213,7 @@ function getAssistantChunkDelay(part) {
 async function deliverAssistantReply(charId, content, { read = false, staged = false } = {}) {
   const parts = splitAssistantReplyIntoMessages(content);
   if (!parts.length) return [];
+  const liveChatOpen = state.currentApp === 'messages' && state.activeChat === charId;
 
   if (!staged || parts.length === 1) {
     return appendAssistantReplyMessages(charId, content, { read });
@@ -1224,8 +1225,6 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
 
   const created = [];
   for (let index = 0; index < parts.length; index += 1) {
-    const liveChatOpen = state.currentApp === 'messages' && state.activeChat === charId;
-
     if (index > 0) {
       if (liveChatOpen) {
         showTypingIndicator();
@@ -1253,6 +1252,12 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
       appendLINEMessageToDOM(charId, msg, prevMsg);
       await nextFrame();
     }
+  }
+
+  if (liveChatOpen) {
+    removeTypingIndicator();
+    renderLINEMessages();
+    await nextFrame();
   }
 
   return created;
