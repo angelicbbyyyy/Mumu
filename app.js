@@ -1171,6 +1171,54 @@ function appendAssistantReplyMessages(charId, content, { read = false } = {}) {
   return created;
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getAssistantChunkDelay(part) {
+  const text = String(part || '').trim();
+  if (!text) return 280;
+  const base = 260 + Math.min(text.length * 12, 520);
+  return Math.max(280, Math.min(760, base));
+}
+
+async function deliverAssistantReply(charId, content, { read = false, staged = false } = {}) {
+  const parts = splitAssistantReplyIntoMessages(content);
+  if (!parts.length) return [];
+
+  if (!staged || parts.length === 1) {
+    return appendAssistantReplyMessages(charId, content, { read });
+  }
+
+  if (!state.conversations[charId]) {
+    state.conversations[charId] = [];
+  }
+
+  const created = [];
+  for (let index = 0; index < parts.length; index += 1) {
+    if (index > 0) {
+      showTypingIndicator();
+      await wait(getAssistantChunkDelay(parts[index]));
+      removeTypingIndicator();
+    }
+
+    const msg = normalizeConversationMessage({
+      role: 'assistant',
+      content: parts[index],
+      ts: Date.now() + index,
+      read,
+    });
+    state.conversations[charId].push(msg);
+    created.push(msg);
+    saveState();
+    if (state.currentApp === 'messages' && state.activeChat === charId) {
+      renderLINEMessages();
+    }
+  }
+
+  return created;
+}
+
 function renderMessageInner(msg) {
   const attachments = msg.attachments || [];
   const images = attachments
@@ -1195,6 +1243,7 @@ function markLastUserMsgRead() {
 }
 
 function showTypingIndicator() {
+  if (document.getElementById('typingRow')) return;
   const area = document.getElementById('lineMessagesArea');
   const char = state.characters.find(c => c.id === state.activeChat);
   const el = document.createElement('div');
@@ -1257,7 +1306,8 @@ async function sendLineMessage() {
     const reply = await callAPI(state.activeChat);
     removeTypingIndicator();
     markLastUserMsgRead();
-    appendAssistantReplyMessages(state.activeChat, reply, { read: true });
+    const shouldStage = state.currentApp === 'messages' && state.activeChat;
+    await deliverAssistantReply(state.activeChat, reply, { read: true, staged: shouldStage });
     renderLINEMessages();
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
@@ -1450,8 +1500,9 @@ async function runProactiveMessageTick() {
   try {
     const reply = await callAPI(nextChar.id, { mode: 'proactive' });
     const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
-    appendAssistantReplyMessages(nextChar.id, reply, {
+    await deliverAssistantReply(nextChar.id, reply, {
       read: state.currentApp === 'messages' && state.activeChat === nextChar.id,
+      staged: state.currentApp === 'messages' && state.activeChat === nextChar.id,
     });
     const liveChar = state.characters.find(char => char.id === nextChar.id);
     if (liveChar) liveChar.lastAutoMessageAt = Date.now();
