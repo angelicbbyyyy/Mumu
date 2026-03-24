@@ -278,6 +278,14 @@ function containsCJKText(text) {
   return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(text || ''));
 }
 
+function stripVoiceNoteWrapper(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^\(?\s*(voice\s*note|audio\s*message|音声メッセージ|ボイスメモ)\s*[:：-]\s*/i, '')
+    .replace(/\)\s*$/, '')
+    .trim();
+}
+
 function ensureVoiceIdMatchesLanguage(char, spokenLanguage) {
   const voiceId = String(char?.minimaxVoiceId || '').trim();
   if (!voiceId) throw new Error('Set a MiniMax voice ID for this character first.');
@@ -1764,19 +1772,23 @@ async function translateEnglishTextForVoice(charId, englishText, char) {
 }
 
 async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fallbackEnglish = '') {
-  const cleanedSource = cleanVoiceTranslationText(spokenText);
+  const cleanedSource = stripVoiceNoteWrapper(cleanVoiceTranslationText(spokenText));
   const cleanedFallback = cleanVoiceTranslationText(fallbackEnglish);
   if (!cleanedSource) return cleanedFallback;
   if (String(spokenLanguage || '').trim().toLowerCase() === 'english') {
     return cleanedSource;
   }
 
-  const translated = await callProviderWithMessages(char, [
-    'You translate short chat voice notes into natural English.',
-    `Source language: ${spokenLanguage}.`,
-    'Preserve the meaning, tone, intimacy, and brevity of the original.',
-    'Return only the English translation with no notes, labels, markdown, or quotation marks.',
-  ].join('\n'), [
+  const basePrompt = [
+    'You are a translation engine.',
+    `Translate the source text from ${spokenLanguage} into natural English.`,
+    'Preserve meaning, tone, intimacy, and brevity.',
+    'Return only English text.',
+    'Do not repeat the original language.',
+    'Do not add labels, notes, stage directions, or quotation marks.',
+  ].join('\n');
+
+  let translated = await callProviderWithMessages(char, basePrompt, [
     normalizeConversationMessage({
       role: 'user',
       content: cleanedSource,
@@ -1785,7 +1797,25 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
     }),
   ], 0.2);
 
-  return cleanVoiceTranslationText(translated) || cleanedFallback || cleanedSource;
+  let cleanedTranslation = cleanVoiceTranslationText(translated);
+  if (String(spokenLanguage || '').trim().toLowerCase() === 'japanese' && containsCJKText(cleanedTranslation)) {
+    translated = await callProviderWithMessages(char, [
+      'Translate this Japanese text into English.',
+      'Your answer must contain English only.',
+      'If you output any Japanese characters, the answer is wrong.',
+      'Return only the final English translation.',
+    ].join('\n'), [
+      normalizeConversationMessage({
+        role: 'user',
+        content: cleanedSource,
+        ts: Date.now(),
+        read: true,
+      }),
+    ], 0);
+    cleanedTranslation = cleanVoiceTranslationText(translated);
+  }
+
+  return cleanedTranslation || cleanedFallback || cleanedSource;
 }
 
 function logVoiceNoteDebug(stage, payload) {
@@ -1810,7 +1840,7 @@ function logVoiceNoteDebug(stage, payload) {
 
 async function createVoiceNoteAttachmentFromSpokenText(spokenText, char, fallbackEnglish = '') {
   const spokenLanguage = getCharacterVoiceLanguageLabel(char);
-  const cleanedSpokenText = cleanVoiceTranslationText(spokenText);
+  const cleanedSpokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(spokenText));
   ensureVoiceIdMatchesLanguage(char, spokenLanguage);
   const translationEn = await translateVoiceTextToEnglish(cleanedSpokenText, spokenLanguage, char, fallbackEnglish);
   logVoiceNoteDebug('spoken-first', {
