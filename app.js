@@ -1049,51 +1049,75 @@ function renderLINEMessages() {
 
   let html = '';
   msgs.forEach((msg, i) => {
-    const isSent = msg.role === 'user';
-    const prevMsg = msgs[i - 1];
-
-    // Date separator
-    if (isDifferentDay(prevMsg?.ts, msg.ts)) {
-      html += `<div class="line-date-sep">${escHtml(formatDateSep(msg.ts))}</div>`;
-    }
-
-    const timeStr = formatMsgTime(msg.ts);
-    const showAvatar = !isSent && (!prevMsg || prevMsg.role === 'user');
-
-    if (isSent) {
-      // Sent: [meta left][green bubble right]
-      const isRead = i < msgs.length - 1 || msg.read;
-      html += `
-        <div class="line-msg-row sent" data-message-id="${escHtml(msg.id)}">
-          <div class="line-msg-meta">
-            <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${state.activeChat}', '${msg.id}')">★</button>
-            ${isRead ? '<span class="line-read">Read</span>' : ''}
-            <span class="line-time">${escHtml(timeStr)}</span>
-          </div>
-          <div class="line-bubble-wrap">
-            <div class="line-bubble sent">${renderMessageInner(msg)}</div>
-          </div>
-        </div>`;
-    } else {
-      // Received: [avatar][white bubble][meta right]
-      html += `
-        <div class="line-msg-row received" data-message-id="${escHtml(msg.id)}">
-          ${showAvatar
-            ? avatarMarkup(char?.avatar, 'line-msg-avatar')
-            : `<div class="line-msg-avatar-spacer"></div>`}
-          <div class="line-bubble-wrap">
-            <div class="line-bubble received">${renderMessageInner(msg)}</div>
-            <div class="line-msg-meta">
-              <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${state.activeChat}', '${msg.id}')">★</button>
-              <span class="line-time">${escHtml(timeStr)}</span>
-            </div>
-          </div>
-        </div>`;
-    }
+    html += renderLINEMessageHtml(msg, msgs[i - 1], char, i, msgs.length, state.activeChat);
   });
 
   area.innerHTML = html;
+  scrollLineMessagesToBottom();
+}
+
+function renderLINEMessageHtml(msg, prevMsg, char, index, total, charId) {
+  const isSent = msg.role === 'user';
+  const timeStr = formatMsgTime(msg.ts);
+  const showAvatar = !isSent && (!prevMsg || prevMsg.role === 'user');
+  let html = '';
+
+  if (isDifferentDay(prevMsg?.ts, msg.ts)) {
+    html += `<div class="line-date-sep">${escHtml(formatDateSep(msg.ts))}</div>`;
+  }
+
+  if (isSent) {
+    const isRead = index < total - 1 || msg.read;
+    html += `
+      <div class="line-msg-row sent" data-message-id="${escHtml(msg.id)}">
+        <div class="line-msg-meta">
+          <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${charId}', '${msg.id}')">★</button>
+          ${isRead ? '<span class="line-read">Read</span>' : ''}
+          <span class="line-time">${escHtml(timeStr)}</span>
+        </div>
+        <div class="line-bubble-wrap">
+          <div class="line-bubble sent">${renderMessageInner(msg)}</div>
+        </div>
+      </div>`;
+    return html;
+  }
+
+  html += `
+    <div class="line-msg-row received" data-message-id="${escHtml(msg.id)}">
+      ${showAvatar
+        ? avatarMarkup(char?.avatar, 'line-msg-avatar')
+        : `<div class="line-msg-avatar-spacer"></div>`}
+      <div class="line-bubble-wrap">
+        <div class="line-bubble received">${renderMessageInner(msg)}</div>
+        <div class="line-msg-meta">
+          <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${charId}', '${msg.id}')">★</button>
+          <span class="line-time">${escHtml(timeStr)}</span>
+        </div>
+      </div>
+    </div>`;
+  return html;
+}
+
+function scrollLineMessagesToBottom() {
+  const area = document.getElementById('lineMessagesArea');
+  if (!area) return;
   area.scrollTop = area.scrollHeight;
+}
+
+function appendLINEMessageToDOM(charId, msg, prevMsg) {
+  const area = document.getElementById('lineMessagesArea');
+  if (!area) return;
+
+  const char = state.characters.find(c => c.id === charId);
+  const isEmptyState = area.querySelector('.line-chat-empty-avatar');
+  if (isEmptyState) {
+    area.innerHTML = '';
+  }
+
+  const messages = state.conversations[charId] || [];
+  const html = renderLINEMessageHtml(msg, prevMsg, char, messages.length - 1, messages.length, charId);
+  area.insertAdjacentHTML('beforeend', html);
+  scrollLineMessagesToBottom();
 }
 
 function appendMsg(role, content) {
@@ -1200,20 +1224,22 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
 
   const created = [];
   for (let index = 0; index < parts.length; index += 1) {
-    if (state.currentApp === 'messages' && state.activeChat === charId) {
-      renderLINEMessages();
-      await nextFrame();
-    }
+    const liveChatOpen = state.currentApp === 'messages' && state.activeChat === charId;
 
     if (index > 0) {
-      showTypingIndicator();
-      await nextFrame();
-      await nextFrame();
+      if (liveChatOpen) {
+        showTypingIndicator();
+        await nextFrame();
+        await nextFrame();
+      }
       await wait(getAssistantChunkDelay(parts[index]));
-      removeTypingIndicator();
-      await nextFrame();
+      if (liveChatOpen) {
+        removeTypingIndicator();
+        await nextFrame();
+      }
     }
 
+    const prevMsg = state.conversations[charId][state.conversations[charId].length - 1] || null;
     const msg = normalizeConversationMessage({
       role: 'assistant',
       content: parts[index],
@@ -1223,10 +1249,9 @@ async function deliverAssistantReply(charId, content, { read = false, staged = f
     state.conversations[charId].push(msg);
     created.push(msg);
     saveState();
-    if (state.currentApp === 'messages' && state.activeChat === charId) {
-      renderLINEMessages();
+    if (liveChatOpen) {
+      appendLINEMessageToDOM(charId, msg, prevMsg);
       await nextFrame();
-      await wait(80);
     }
   }
 
@@ -1271,7 +1296,7 @@ function showTypingIndicator() {
       <div class="line-typing-dot"></div>
     </div>`;
   area.appendChild(el);
-  area.scrollTop = area.scrollHeight;
+  scrollLineMessagesToBottom();
 }
 
 function removeTypingIndicator() {
