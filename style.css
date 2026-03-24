@@ -1773,6 +1773,33 @@ body {
 
 .contact-info { flex: 1; min-width: 0; }
 
+.contact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.contact-chat-btn,
+.contact-settings-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.contact-chat-btn {
+  background: #17c950;
+  color: white;
+}
+
+.contact-settings-btn {
+  background: #eef3fb;
+  color: #4d698f;
+}
+
 .contact-name {
   font-size: 17px;
   font-weight: 600;

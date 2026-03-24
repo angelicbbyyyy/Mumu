@@ -2621,6 +2621,8 @@ function renderContactsList(filter = '') {
       <div class="contact-actions">
         <button class="contact-chat-btn"
           onclick="event.stopPropagation();chatFromContacts('${char.id}')">Chat</button>
+        <button class="contact-settings-btn"
+          onclick="event.stopPropagation();openCharacterSettings('${char.id}')">Settings</button>
         <span style="color:#C7C7CC;font-size:18px;">›</span>
       </div>
     </div>`;
