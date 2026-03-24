@@ -157,6 +157,28 @@ const HIDDEN_REALISM_PROMPTS = [
   'If an image is attached, respond only to what is reasonably visible and be honest about uncertainty.',
 ];
 
+const MINIMAX_INTERJECTION_TAGS = [
+  '(laughs)',
+  '(chuckle)',
+  '(coughs)',
+  '(clear-throat)',
+  '(groans)',
+  '(breath)',
+  '(pant)',
+  '(inhale)',
+  '(exhale)',
+  '(gasps)',
+  '(sniffs)',
+  '(sighs)',
+  '(snorts)',
+  '(burps)',
+  '(lip-smacking)',
+  '(humming)',
+  '(hissing)',
+  '(emm)',
+  '(sneezes)',
+];
+
 function parseTagList(raw) {
   if (Array.isArray(raw)) {
     return raw.map(tag => String(tag).trim()).filter(Boolean);
@@ -1785,6 +1807,7 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
     'Preserve meaning, tone, intimacy, and brevity.',
     'Return only English text.',
     'Do not repeat the original language.',
+    'If the source contains interjection tags such as (laughs) or (sighs), render them naturally in the English phrasing instead of copying raw tags.',
     'Do not add labels, notes, stage directions, or quotation marks.',
   ].join('\n');
 
@@ -1820,10 +1843,23 @@ async function translateVoiceTextToEnglish(spokenText, spokenLanguage, char, fal
 
 async function generateSpokenVoiceReply(charId, char) {
   const spokenLanguage = getCharacterVoiceLanguageLabel(char);
-  const rawReply = await callAPI(charId, {
-    mode: 'voice_note',
-    targetLanguageForReply: spokenLanguage,
-  });
+  const fullHistory = state.conversations[charId] || [];
+  const historyLimit = Math.max(1, Math.min(50, Number(char?.historyMessageCount) || 12));
+  const history = fullHistory.slice(-historyLimit).map(normalizeConversationMessage);
+  const basePrompt = buildPromptBundle(char, history);
+  const supportsInterjections = ['speech-2.8-hd', 'speech-2.8-turbo'].includes(state.settings.minimaxVoiceModel || 'speech-2.8-turbo');
+  const voicePrompt = [
+    basePrompt,
+    '# Voice Note Mode',
+    `Reply entirely in ${spokenLanguage}.`,
+    'Return only the spoken voice-note text. Do not add labels like "Voice Note:", parentheses around the whole message, markdown, roleplay markers, or explanations.',
+    'Keep it short, natural, and message-like: usually 1 to 3 short sentences.',
+    supportsInterjections
+      ? `When it helps the performance feel natural, you may use MiniMax interjection tags sparingly, for example: ${MINIMAX_INTERJECTION_TAGS.slice(0, 6).join(', ')}.`
+      : 'Do not use interjection tags in this reply.',
+  ].join('\n\n');
+
+  const rawReply = await callProviderWithMessages(char, voicePrompt, history, char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null);
   const spokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(rawReply));
   if (!spokenText) {
     throw new Error('Voice note generation returned empty text.');
