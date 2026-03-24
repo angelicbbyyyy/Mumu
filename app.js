@@ -313,6 +313,15 @@ function ensureVoiceIdMatchesLanguage(char, spokenLanguage) {
   if (!voiceId) throw new Error('Set a MiniMax voice ID for this character first.');
 }
 
+function maybeNormalizeSpokenVoiceReply(spokenText, spokenLanguage) {
+  const cleaned = stripVoiceNoteWrapper(cleanVoiceTranslationText(spokenText));
+  if (!cleaned) return '';
+  if (String(spokenLanguage || '').trim().toLowerCase() === 'japanese') {
+    return cleaned.replace(/^\(?\s*voice\s*note\s*[:：-]\s*/i, '').trim();
+  }
+  return cleaned;
+}
+
 function normalizeConversationMessage(raw = {}) {
   return {
     id: raw.id || uuid(),
@@ -1512,7 +1521,6 @@ function removeTypingIndicator() {
 let isSending = false;
 let proactiveMessageInFlight = false;
 let proactiveMessageTimer = null;
-let showNextVoiceDebugAlert = false;
 
 async function sendLineMessage() {
   if (isSending) return;
@@ -1851,72 +1859,47 @@ async function generateSpokenVoiceReply(charId, char) {
   const voicePrompt = [
     basePrompt,
     '# Voice Note Mode',
-    `Reply entirely in ${spokenLanguage}.`,
-    'Return only the spoken voice-note text. Do not add labels like "Voice Note:", parentheses around the whole message, markdown, roleplay markers, or explanations.',
-    'Keep it short, natural, and message-like: usually 1 to 3 short sentences.',
+    `Write the next reply entirely in ${spokenLanguage}.`,
+    'Return only the final spoken voice-note text.',
+    'Do not add labels like "Voice Note:" or any surrounding parentheses for the whole message.',
+    'Keep it short, natural, and conversational.',
     supportsInterjections
-      ? `When it helps the performance feel natural, you may use MiniMax interjection tags sparingly, for example: ${MINIMAX_INTERJECTION_TAGS.slice(0, 6).join(', ')}.`
+      ? `You may use MiniMax interjection tags sparingly when natural, such as: ${MINIMAX_INTERJECTION_TAGS.slice(0, 6).join(', ')}.`
       : 'Do not use interjection tags in this reply.',
   ].join('\n\n');
-
   const voiceMessages = [
     ...history,
     normalizeConversationMessage({
       role: 'user',
-      content: `[SYSTEM NOTE: Generate the voice note now. Reply only with the final spoken ${spokenLanguage} text for the character's next voice message.]`,
+      content: `Generate the character's next voice note now in ${spokenLanguage}. Respond only with the spoken text.`,
       ts: Date.now(),
       read: true,
     }),
   ];
-
   const rawReply = await callProviderWithMessages(
     char,
     voicePrompt,
     voiceMessages,
     char && char.temperature !== '' ? Math.max(0, Math.min(2, Number(char.temperature) || 0)) : null,
   );
-  const spokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(rawReply));
-  if (!spokenText) {
-    throw new Error('Voice note generation returned empty text.');
+  let spokenText = maybeNormalizeSpokenVoiceReply(rawReply, spokenLanguage);
+  if (!spokenText && history.length) {
+    const fallback = await callAPI(charId, { mode: 'voice_note', targetLanguageForReply: spokenLanguage });
+    spokenText = maybeNormalizeSpokenVoiceReply(fallback, spokenLanguage);
   }
-  return {
-    spokenText,
-    spokenLanguage,
-  };
-}
-
-function logVoiceNoteDebug(stage, payload) {
-  const debugPayload = {
-    stage,
-    ...payload,
-    ts: new Date().toISOString(),
-  };
-  window.__lastVoiceNoteDebug = debugPayload;
-  console.info('[voice-note-debug]', debugPayload);
-  if (showNextVoiceDebugAlert) {
-    showNextVoiceDebugAlert = false;
-    alert([
-      `[voice-note-debug] ${stage}`,
-      `language: ${debugPayload.spokenLanguage || ''}`,
-      `voice_id: ${debugPayload.voiceId || ''}`,
-      `spoken: ${debugPayload.spokenText || ''}`,
-      `translation: ${debugPayload.translationEn || ''}`,
-    ].join('\n\n'));
+  if (!spokenText) throw new Error('Voice note generation returned empty text.');
+  if (spokenLanguage.toLowerCase() === 'japanese' && !containsCJKText(spokenText)) {
+    const translated = await translateEnglishTextForVoice(charId, spokenText, char);
+    spokenText = maybeNormalizeSpokenVoiceReply(translated.spokenText, spokenLanguage);
   }
+  return { spokenText, spokenLanguage };
 }
 
 async function createVoiceNoteAttachmentFromSpokenText(spokenText, char, fallbackEnglish = '') {
   const spokenLanguage = getCharacterVoiceLanguageLabel(char);
-  const cleanedSpokenText = stripVoiceNoteWrapper(cleanVoiceTranslationText(spokenText));
+  const cleanedSpokenText = maybeNormalizeSpokenVoiceReply(spokenText, spokenLanguage);
   ensureVoiceIdMatchesLanguage(char, spokenLanguage);
   const translationEn = await translateVoiceTextToEnglish(cleanedSpokenText, spokenLanguage, char, fallbackEnglish);
-  logVoiceNoteDebug('spoken-first', {
-    charId: char?.id || '',
-    voiceId: char?.minimaxVoiceId || '',
-    spokenLanguage,
-    spokenText: cleanedSpokenText,
-    translationEn,
-  });
   const attachment = await generateMiniMaxVoiceAttachment(cleanedSpokenText, char, {
     spokenLanguage,
     translationEn,
@@ -1933,14 +1916,6 @@ async function createCharacterVoiceNoteAttachment(charId, englishText, char) {
   const { spokenText, spokenLanguage } = await translateEnglishTextForVoice(charId, canonicalEnglish, char);
   ensureVoiceIdMatchesLanguage(char, spokenLanguage);
   const translationEn = await translateVoiceTextToEnglish(spokenText, spokenLanguage, char, canonicalEnglish);
-  logVoiceNoteDebug('english-first', {
-    charId,
-    voiceId: char?.minimaxVoiceId || '',
-    spokenLanguage,
-    canonicalEnglish,
-    spokenText,
-    translationEn,
-  });
   const attachment = await generateMiniMaxVoiceAttachment(spokenText, char, {
     spokenLanguage,
     translationEn,
@@ -2017,7 +1992,6 @@ async function generateMiniMaxVoiceAttachment(text, char, options = {}) {
 
 async function requestCharacterVoiceNote() {
   if (!state.activeChat || isSending) return;
-  showNextVoiceDebugAlert = true;
   const rawChar = state.characters.find(entry => entry.id === state.activeChat);
   const liveSettingsVoiceId = state.settingsCharId === state.activeChat
     ? document.getElementById('charSettingsMiniMaxVoiceId')?.value?.trim() || ''
@@ -2044,11 +2018,8 @@ async function requestCharacterVoiceNote() {
   showToast('Generating voice note...');
 
   try {
-    const { spokenText, spokenLanguage } = await generateSpokenVoiceReply(state.activeChat, char);
-    const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(spokenText, {
-      ...char,
-      minimaxLanguage: spokenLanguage,
-    });
+    const { spokenText } = await generateSpokenVoiceReply(state.activeChat, char);
+    const voiceAttachment = await createVoiceNoteAttachmentFromSpokenText(spokenText, char);
     removeTypingIndicator();
     appendSingleAssistantMessage(state.activeChat, voiceAttachment.translationEn || '', { read: true, attachments: [voiceAttachment] });
     renderLINEMessages();
