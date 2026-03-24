@@ -151,6 +151,13 @@
           <span class="icon-label">Wallet</span>
         </div>
 
+        <div class="app-icon" onclick="openMemoryViewer()">
+          <div class="icon-wrap icon-worldbook">
+            <svg class="icon-glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#icon-worldbook-svg"></use></svg>
+          </div>
+          <span class="icon-label">Memory</span>
+        </div>
+
       </div>
 
       <!-- Page dots -->
@@ -440,8 +447,31 @@
           <button class="btn btn-primary" onclick="sendWalletFunds()">Send Money</button>
         </div>
 
+        <div class="settings-section-label">Selected Card Details</div>
+        <div class="settings-group wallet-detail-card" id="walletCardDetail"></div>
+
+        <div class="settings-section-label">Recent Activity</div>
+        <div class="settings-group wallet-transaction-list" id="walletTransactionList"></div>
+
         <div class="settings-section-label">Character Wallets</div>
         <div class="settings-group" id="walletCharacterList"></div>
+      </div>
+      <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
+    </div>
+
+    <!-- ============================================================
+         APP: MEMORY VIEWER
+         ============================================================ -->
+    <div class="app-overlay" id="app-memory">
+      <div class="app-nav-bar">
+        <button class="app-nav-back" onclick="goHome()">
+          <svg viewBox="0 0 12 20" fill="none" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"><polyline points="10 1 1 10 10 19"/></svg>
+        </button>
+        <span class="app-nav-title">Memory Viewer</span>
+        <div style="width:44px;"></div>
+      </div>
+      <div class="persona-scroll">
+        <div id="memoryViewerContent"></div>
       </div>
       <div class="app-home-bar" onclick="goHome()"><div class="app-home-pill"></div></div>
     </div>
@@ -621,9 +651,21 @@
             <div class="settings-row-label">Your Name</div>
             <input class="settings-input" id="settingsUserName" type="text" placeholder="You" oninput="saveSettings()">
           </div>
+          <div class="settings-row">
+            <div class="settings-row-icon" style="background:#eefdf2;">🔔</div>
+            <div class="settings-row-label">Notifications</div>
+            <label class="form-toggle">
+              <input id="settingsNotificationsEnabled" type="checkbox" onchange="saveSettings()">
+              <span>Enabled</span>
+            </label>
+          </div>
           <div class="settings-row" style="cursor:pointer;" onclick="openWallpaperPicker()">
             <div class="settings-row-icon" style="background:#eef4ff;">🖼️</div>
             <div class="settings-row-label" style="color:#007AFF;">Change Wallpaper</div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;" onclick="openMemoryViewer()">
+            <div class="settings-row-icon" style="background:#fff5e8;">🧠</div>
+            <div class="settings-row-label" style="color:#007AFF;">Open Memory Viewer</div>
           </div>
         </div>
 
@@ -755,6 +797,38 @@
             <span class="form-label">Every (minutes)</span>
             <input class="form-input" id="charAutoMessageInterval" type="number" min="1" step="1" placeholder="60">
           </div>
+          <div class="form-row">
+            <span class="form-label">Closeness</span>
+            <input class="form-input" id="charCloseness" type="number" min="0" max="100" step="1" placeholder="50">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Mood / Status</span>
+            <input class="form-input" id="charMood" type="text" placeholder="Playful, distant, sleepy...">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Availability</span>
+            <select class="settings-select" id="charAvailability">
+              <option value="available">Available</option>
+              <option value="busy">Busy</option>
+              <option value="offline">Offline</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <span class="form-label">Anniversary</span>
+            <input class="form-input" id="charAnniversaryDate" type="date">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Check In Every (days)</span>
+            <input class="form-input" id="charRecurringCheckInDays" type="number" min="0" step="1" placeholder="7">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Scheduled Moment</span>
+            <input class="form-input" id="charScheduledMomentTitle" type="text" placeholder="Movie night, birthday, trip...">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Moment Date</span>
+            <input class="form-input" id="charScheduledMomentAt" type="date">
+          </div>
           <div class="form-row form-textarea-row">
             <span class="form-label">Scenario Setup</span>
             <textarea class="form-textarea" id="charScenario" placeholder="Per-character scene setup or opening assumptions..." rows="3"></textarea>
@@ -762,6 +836,10 @@
           <div class="form-row form-textarea-row">
             <span class="form-label">Persona / System Prompt</span>
             <textarea class="form-textarea" id="charSystem" placeholder="You are [name], a..." rows="4"></textarea>
+          </div>
+          <div class="form-row form-textarea-row">
+            <span class="form-label">Profile Note</span>
+            <textarea class="form-textarea" id="charProfileNote" placeholder="Private profile note, relationship beats, important reminders..." rows="3"></textarea>
           </div>
           <div class="form-row form-textarea-row">
             <span class="form-label">Private Notes</span>
@@ -779,6 +857,7 @@
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
+    <div class="notification-container" id="notificationContainer"></div>
 
     <input type="file" id="voomImageInput" accept="image/*" style="display:none" onchange="handleVoomImageChange(event)">
     <input type="file" id="studioImportInput" accept="application/json,.json" style="display:none" onchange="handleImportStudioData(event)">
@@ -808,6 +887,14 @@
           <button class="btn btn-secondary" onclick="closeVoomComposer()">Cancel</button>
           <button class="btn btn-primary" onclick="saveVoomPost()">Post</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="characterProfileModal" onclick="closeCharacterProfile(event)">
+      <div class="modal-sheet character-profile-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">Character Profile</div>
+        <div id="characterProfileContent"></div>
       </div>
     </div>
 

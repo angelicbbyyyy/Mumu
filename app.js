@@ -32,6 +32,7 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
+    notificationsEnabled: true,
   },
   wallet: {
     balance: 120,
@@ -42,6 +43,7 @@ const state = {
   },
   wallpaper: null,             // CSS background value
   editingCharId: null,
+  viewingCharacterId: null,
 };
 
 // ============================================================
@@ -121,6 +123,7 @@ const DEFAULT_SETTINGS = {
   model: 'claude-sonnet-4-6',
   userName: 'You',
   memoryNote: '',
+  notificationsEnabled: true,
 };
 
 const DEFAULT_WALLET = {
@@ -185,6 +188,14 @@ function normalizeCharacter(raw = {}) {
     autoMessageEnabled: raw.autoMessageEnabled === true,
     autoMessageIntervalMinutes,
     lastAutoMessageAt: Number(raw.lastAutoMessageAt) || 0,
+    closeness: Math.max(0, Math.min(100, Number(raw.closeness) || 50)),
+    mood: raw.mood || '',
+    availability: ['available', 'busy', 'offline'].includes(raw.availability) ? raw.availability : 'available',
+    anniversaryDate: raw.anniversaryDate || '',
+    recurringCheckInDays: Math.max(0, Number(raw.recurringCheckInDays) || 0),
+    scheduledMomentTitle: raw.scheduledMomentTitle || '',
+    scheduledMomentAt: raw.scheduledMomentAt || '',
+    profileNote: raw.profileNote || '',
   };
 }
 
@@ -193,6 +204,7 @@ function normalizeWorldBookEntry(raw = {}) {
     id: raw.id || uuid(),
     title: raw.title || 'New Entry',
     content: raw.content || '',
+    category: raw.category || '',
     keywords: parseTagList(raw.keywords),
     priority: Number.isFinite(Number(raw.priority)) ? Number(raw.priority) : 50,
     scope: raw.scope === 'always' ? 'always' : 'conditional',
@@ -211,10 +223,12 @@ function normalizeMessageAttachment(raw = {}) {
 
 function normalizeConversationMessage(raw = {}) {
   return {
+    id: raw.id || uuid(),
     role: raw.role === 'assistant' ? 'assistant' : 'user',
     content: raw.content || '',
     ts: raw.ts || Date.now(),
     read: raw.read === true,
+    favorite: raw.favorite === true,
     attachments: Array.isArray(raw.attachments) ? raw.attachments.map(normalizeMessageAttachment).filter(att => att.url) : [],
   };
 }
@@ -239,6 +253,7 @@ function normalizeWallet(raw = {}) {
   const rawTransactions = Array.isArray(raw.transactions) ? raw.transactions.map(tx => ({
     id: tx.id || uuid(),
     type: tx.type || 'fund',
+    cardId: tx.cardId || '',
     amount: Number(tx.amount) || 0,
     charId: tx.charId || '',
     ts: tx.ts || Date.now(),
@@ -294,7 +309,11 @@ function setWalletActiveCard(cardId, { scroll = false } = {}) {
   const transferSelect = document.getElementById('walletTransferCard');
   if (transferSelect) transferSelect.value = state.wallet.activeCardId;
 
+  document.querySelectorAll('.wallet-card').forEach(cardEl => {
+    cardEl.classList.toggle('is-active', cardEl.dataset.cardId === state.wallet.activeCardId);
+  });
   renderWalletCardDots(state.wallet.cards.length, getWalletActiveCardIndex());
+  renderWalletDetailPanels();
   saveState();
 
   if (scroll) {
@@ -517,6 +536,135 @@ function showToast(msg) {
   setTimeout(() => el.classList.remove('show'), 2200);
 }
 
+function showPushNotification({ title, body = '', charId = '', avatar = '💬' }) {
+  if (!state.settings.notificationsEnabled) return;
+  const container = document.getElementById('notificationContainer');
+  if (!container) return;
+
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'push-notification';
+  item.innerHTML = `
+    <div class="push-notification-app">Messages</div>
+    <div class="push-notification-main">
+      ${avatarMarkup(avatar, 'push-notification-avatar', '💬')}
+      <div class="push-notification-copy">
+        <div class="push-notification-title">${escHtml(title)}</div>
+        <div class="push-notification-body">${escHtml(body || 'New message')}</div>
+      </div>
+    </div>
+  `;
+  item.onclick = () => {
+    container.removeChild(item);
+    goHome();
+    setTimeout(() => {
+      openApp('messages');
+      if (charId) {
+        setTimeout(() => openLINEChat(charId), 120);
+      }
+    }, 120);
+  };
+
+  container.appendChild(item);
+  requestAnimationFrame(() => item.classList.add('show'));
+  setTimeout(() => {
+    item.classList.remove('show');
+    setTimeout(() => item.remove(), 220);
+  }, 4200);
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return 'No activity yet';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatCalendarDate(value) {
+  if (!value) return 'Not set';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function getCharacterLastSeen(charId) {
+  return lastMsg(charId)?.ts || 0;
+}
+
+function getAvailabilityLabel(value) {
+  const map = {
+    available: 'Available',
+    busy: 'Busy',
+    offline: 'Offline',
+  };
+  return map[value] || 'Available';
+}
+
+function getFavoriteMessages() {
+  return state.characters.flatMap(char => {
+    const messages = state.conversations[char.id] || [];
+    return messages
+      .filter(msg => msg.favorite)
+      .map(msg => ({ ...msg, charId: char.id, charName: char.name, charAvatar: char.avatar }));
+  }).sort((a, b) => b.ts - a.ts);
+}
+
+function toggleFavoriteMessage(charId, msgId) {
+  const messages = state.conversations[charId] || [];
+  const message = messages.find(entry => entry.id === msgId);
+  if (!message) return;
+  message.favorite = !message.favorite;
+  saveState();
+  renderLINEMessages();
+  if (state.currentApp === 'memory') renderMemoryViewer();
+  showToast(message.favorite ? 'Saved to favorites' : 'Removed from favorites');
+}
+
+function getMessageCountByRole(charId, role) {
+  return (state.conversations[charId] || []).filter(msg => msg.role === role).length;
+}
+
+function getCharacterImageGallery(charId) {
+  const char = state.characters.find(entry => entry.id === charId);
+  const chatImages = (state.conversations[charId] || []).flatMap(msg =>
+    (msg.attachments || [])
+      .filter(att => att.type === 'image' && att.url)
+      .map(att => ({ url: att.url, ts: msg.ts, source: 'Chat' }))
+  );
+  const voomImages = state.voomPosts
+    .filter(post => (post.authorId === charId || (char && post.authorName === char.name)) && post.image)
+    .map(post => ({ url: post.image, ts: post.ts, source: 'VOOM' }));
+  return [...chatImages, ...voomImages].sort((a, b) => b.ts - a.ts);
+}
+
+function getCharacterUpcomingEvents(char) {
+  const events = [];
+  if (char.anniversaryDate) {
+    events.push({ label: 'Anniversary', value: formatCalendarDate(char.anniversaryDate) });
+  }
+  if (char.scheduledMomentTitle || char.scheduledMomentAt) {
+    events.push({
+      label: char.scheduledMomentTitle || 'Scheduled moment',
+      value: char.scheduledMomentAt ? formatCalendarDate(char.scheduledMomentAt) : 'No date set',
+    });
+  }
+  if (char.recurringCheckInDays > 0) {
+    events.push({ label: 'Recurring check-in', value: `Every ${char.recurringCheckInDays} day${char.recurringCheckInDays === 1 ? '' : 's'}` });
+  }
+  return events;
+}
+
+function openMemoryViewer() {
+  goHome();
+  setTimeout(() => openApp('memory'), 120);
+}
+
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 80) + 'px';
@@ -683,6 +831,7 @@ function openApp(name) {
   if (name === 'worldbook') renderWorldBook();
   if (name === 'settings') renderSettings();
   if (name === 'wallet') renderWallet();
+  if (name === 'memory') renderMemoryViewer();
 }
 
 function goHome() {
@@ -915,8 +1064,9 @@ function renderLINEMessages() {
       // Sent: [meta left][green bubble right]
       const isRead = i < msgs.length - 1 || msg.read;
       html += `
-        <div class="line-msg-row sent">
+        <div class="line-msg-row sent" data-message-id="${escHtml(msg.id)}">
           <div class="line-msg-meta">
+            <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${state.activeChat}', '${msg.id}')">★</button>
             ${isRead ? '<span class="line-read">Read</span>' : ''}
             <span class="line-time">${escHtml(timeStr)}</span>
           </div>
@@ -927,13 +1077,14 @@ function renderLINEMessages() {
     } else {
       // Received: [avatar][white bubble][meta right]
       html += `
-        <div class="line-msg-row received">
+        <div class="line-msg-row received" data-message-id="${escHtml(msg.id)}">
           ${showAvatar
             ? avatarMarkup(char?.avatar, 'line-msg-avatar')
             : `<div class="line-msg-avatar-spacer"></div>`}
           <div class="line-bubble-wrap">
             <div class="line-bubble received">${renderMessageInner(msg)}</div>
             <div class="line-msg-meta">
+              <button class="line-favorite-btn ${msg.favorite ? 'is-active' : ''}" type="button" aria-label="Save message" onclick="toggleFavoriteMessage('${state.activeChat}', '${msg.id}')">★</button>
               <span class="line-time">${escHtml(timeStr)}</span>
             </div>
           </div>
@@ -1045,6 +1196,15 @@ async function sendLineMessage() {
     incoming.read = true;
     saveState();
     renderLINEMessages();
+    if (state.currentApp !== 'messages') {
+      const char = state.characters.find(entry => entry.id === state.activeChat);
+      showPushNotification({
+        title: char?.name || 'New message',
+        body: reply || 'Sent you a message',
+        charId: state.activeChat,
+        avatar: char?.avatar || '💬',
+      });
+    }
   } catch (err) {
     removeTypingIndicator();
     await showApiError(err);
@@ -1236,6 +1396,12 @@ async function runProactiveMessageTick() {
     const liveChar = state.characters.find(char => char.id === nextChar.id);
     if (liveChar) liveChar.lastAutoMessageAt = Date.now();
     saveState();
+    showPushNotification({
+      title: nextChar.name,
+      body: reply || 'Sent you a message',
+      charId: nextChar.id,
+      avatar: nextChar.avatar || '💬',
+    });
     if (state.currentApp === 'messages') {
       renderLINEConvList();
       if (state.activeChat === nextChar.id) renderLINEMessages();
@@ -1510,6 +1676,8 @@ function renderSettings() {
   if (provEl) provEl.value = s.provider || 'anthropic';
   document.getElementById('settingsApiKey').value = s.apiKey || '';
   document.getElementById('settingsUserName').value = s.userName || '';
+  const notificationsEl = document.getElementById('settingsNotificationsEnabled');
+  if (notificationsEl) notificationsEl.checked = s.notificationsEnabled !== false;
   const customModelEl = document.getElementById('settingsCustomModel');
   if (customModelEl) customModelEl.value = s.model || '';
   const memoryEl = document.getElementById('settingsMemoryNote');
@@ -1584,6 +1752,7 @@ function saveSettings() {
     : (document.getElementById('settingsModel')?.value || state.settings.model);
   state.settings.userName  = document.getElementById('settingsUserName')?.value?.trim() || '';
   state.settings.memoryNote = document.getElementById('settingsMemoryNote')?.value?.trim() || '';
+  state.settings.notificationsEnabled = document.getElementById('settingsNotificationsEnabled')?.checked !== false;
   saveState();
 }
 
@@ -1600,6 +1769,153 @@ function ensureWalletCharacterBalance(charId) {
 
 function formatCurrency(amount) {
   return `$${(Number(amount) || 0).toFixed(2)}`;
+}
+
+function renderWalletDetailPanels() {
+  const activeCard = state.wallet.cards.find(card => card.id === state.wallet.activeCardId) || state.wallet.cards[0] || null;
+  const detail = document.getElementById('walletCardDetail');
+  if (detail) {
+    if (!activeCard) {
+      detail.innerHTML = '<div class="wallet-detail-empty">Add a card to see card details.</div>';
+    } else {
+      const sentTotal = state.wallet.transactions
+        .filter(tx => tx.cardId === activeCard.id && tx.type === 'transfer')
+        .reduce((sum, tx) => sum + tx.amount, 0);
+      const fundTotal = state.wallet.transactions
+        .filter(tx => tx.cardId === activeCard.id && tx.type === 'fund')
+        .reduce((sum, tx) => sum + tx.amount, 0);
+      detail.innerHTML = `
+        <div class="wallet-detail-grid">
+          <div><span>Selected Card</span><strong>${escHtml(activeCard.label)}</strong></div>
+          <div><span>Network</span><strong>${escHtml(activeCard.network)}</strong></div>
+          <div><span>Card Balance</span><strong>${formatCurrency(activeCard.balance)}</strong></div>
+          <div><span>Total Added</span><strong>${formatCurrency(fundTotal)}</strong></div>
+          <div><span>Total Sent</span><strong>${formatCurrency(sentTotal)}</strong></div>
+          <div><span>Ending In</span><strong>•••• ${escHtml(activeCard.last4)}</strong></div>
+        </div>
+      `;
+    }
+  }
+
+  const txList = document.getElementById('walletTransactionList');
+  if (txList) {
+    const transactions = activeCard
+      ? state.wallet.transactions.filter(tx => !tx.cardId || tx.cardId === activeCard.id)
+      : state.wallet.transactions;
+    txList.innerHTML = transactions.length
+      ? transactions.slice(0, 10).map(tx => {
+        const char = state.characters.find(entry => entry.id === tx.charId);
+        const label = tx.type === 'transfer'
+          ? `Sent to ${char?.name || 'character'}`
+          : 'Added funds';
+        return `
+          <div class="wallet-transaction-row">
+            <div>
+              <strong>${escHtml(label)}</strong>
+              <div>${escHtml(tx.note || '')} • ${escHtml(formatShortTime(tx.ts))}</div>
+            </div>
+            <span class="${tx.type === 'transfer' ? 'wallet-transaction-out' : 'wallet-transaction-in'}">${tx.type === 'transfer' ? '-' : '+'}${formatCurrency(tx.amount)}</span>
+          </div>
+        `;
+      }).join('')
+      : '<div class="wallet-detail-empty">No transactions yet.</div>';
+  }
+}
+
+function renderMemoryViewer() {
+  const root = document.getElementById('memoryViewerContent');
+  if (!root) return;
+
+  const favorites = getFavoriteMessages();
+  const totalMessages = Object.values(state.conversations).reduce((sum, messages) => sum + messages.length, 0);
+  const memoryCards = state.characters.map(rawChar => {
+    const char = normalizeCharacter(rawChar);
+    const messages = state.conversations[char.id] || [];
+    const galleryCount = getCharacterImageGallery(char.id).length;
+    const upcoming = getCharacterUpcomingEvents(char);
+    return `
+      <div class="memory-character-card">
+        <div class="memory-character-head">
+          ${avatarMarkup(char.avatar, 'memory-character-avatar')}
+          <div>
+            <div class="memory-character-name">${escHtml(char.name)}</div>
+            <div class="memory-character-sub">${escHtml(char.relationship || 'No relationship set')} • ${escHtml(getAvailabilityLabel(char.availability))}</div>
+          </div>
+        </div>
+        <div class="memory-character-stats">
+          <div><span>Messages</span><strong>${messages.length}</strong></div>
+          <div><span>Closeness</span><strong>${char.closeness}/100</strong></div>
+          <div><span>Images</span><strong>${galleryCount}</strong></div>
+        </div>
+        <div class="memory-character-copy">
+          <div><span>Last seen</span><strong>${escHtml(formatRelativeTime(getCharacterLastSeen(char.id)))}</strong></div>
+          <div><span>Mood</span><strong>${escHtml(char.mood || 'Not set')}</strong></div>
+          ${upcoming[0] ? `<div><span>Next event</span><strong>${escHtml(`${upcoming[0].label} • ${upcoming[0].value}`)}</strong></div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="memory-summary-grid">
+      <div class="memory-summary-card"><span>Favorites</span><strong>${favorites.length}</strong></div>
+      <div class="memory-summary-card"><span>Total Messages</span><strong>${totalMessages}</strong></div>
+      <div class="memory-summary-card"><span>World Entries</span><strong>${state.worldBook.length}</strong></div>
+    </div>
+
+    <div class="settings-section-label">Saved Messages</div>
+    <div class="memory-section-card">
+      ${favorites.length ? favorites.map(msg => `
+        <button class="memory-favorite-row" type="button" onclick="openMemoryFavorite('${msg.charId}', '${msg.id}')">
+          ${avatarMarkup(msg.charAvatar, 'memory-favorite-avatar')}
+          <div class="memory-favorite-copy">
+            <div class="memory-favorite-head">
+              <strong>${escHtml(msg.charName)}</strong>
+              <span>${escHtml(formatShortTime(msg.ts))}</span>
+            </div>
+            <div class="memory-favorite-body">${escHtml(msg.content || (msg.attachments?.length ? 'Photo message' : 'Saved message'))}</div>
+          </div>
+        </button>
+      `).join('') : '<div class="memory-empty">Star messages in chat to save them here.</div>'}
+    </div>
+
+    <div class="settings-section-label">Character Memory</div>
+    <div class="memory-character-grid">
+      ${memoryCards || '<div class="memory-empty">Add a character to begin tracking chat memory.</div>'}
+    </div>
+
+    <div class="settings-section-label">World Context</div>
+    <div class="memory-section-card">
+      ${state.worldBook.length ? state.worldBook.map(rawEntry => {
+        const entry = normalizeWorldBookEntry(rawEntry);
+        return `
+          <div class="memory-world-row">
+            <div>
+              <strong>${escHtml(entry.title)}</strong>
+              <div>${escHtml(entry.category || 'General')} • ${escHtml(entry.scope === 'always' ? 'Always On' : 'Conditional')}</div>
+            </div>
+            <span>${entry.enabled ? 'Active' : 'Off'}</span>
+          </div>
+        `;
+      }).join('') : '<div class="memory-empty">World Book entries will show up here.</div>'}
+    </div>
+  `;
+}
+
+function openMemoryFavorite(charId, msgId) {
+  goHome();
+  setTimeout(() => {
+    openApp('messages');
+    setTimeout(() => {
+      openLINEChat(charId);
+      requestAnimationFrame(() => {
+        const target = document.querySelector(`[data-message-id="${CSS.escape(msgId)}"]`);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target?.classList.add('memory-jump-highlight');
+        setTimeout(() => target?.classList.remove('memory-jump-highlight'), 1800);
+      });
+    }, 120);
+  }, 120);
 }
 
 function renderWallet() {
@@ -1690,6 +2006,7 @@ function renderWallet() {
       `).join('');
     }
   }
+  renderWalletDetailPanels();
 }
 
 function addWalletCard() {
@@ -1733,7 +2050,7 @@ function addWalletFunds() {
   }
   card.balance += amount;
   state.wallet.activeCardId = cardId;
-  state.wallet.transactions.unshift({ id: uuid(), type: 'fund', amount, ts: Date.now(), note: `Added funds to ${card.label}` });
+  state.wallet.transactions.unshift({ id: uuid(), type: 'fund', cardId, amount, ts: Date.now(), note: `Added funds to ${card.label}` });
   document.getElementById('walletFundAmount').value = '';
   saveState();
   renderWallet();
@@ -1770,7 +2087,7 @@ function sendWalletFunds() {
   card.balance -= amount;
   state.wallet.activeCardId = cardId;
   state.wallet.characterBalances[charId] += amount;
-  state.wallet.transactions.unshift({ id: uuid(), type: 'transfer', amount, charId, ts: Date.now(), note: `Sent from ${card.label}` });
+  state.wallet.transactions.unshift({ id: uuid(), type: 'transfer', cardId, amount, charId, ts: Date.now(), note: `Sent from ${card.label}` });
   document.getElementById('walletTransferAmount').value = '';
   saveState();
   renderWallet();
@@ -1872,6 +2189,7 @@ function applyImportedStudioData(payload) {
   state.activeChat = null;
   state.lineTab = 'chats';
   state.editingCharId = null;
+  state.viewingCharacterId = null;
 
   saveState();
   applyWallpaper(state.wallpaper);
@@ -1927,7 +2245,7 @@ function renderContactsList(filter = '') {
   container.innerHTML = chars.map(rawChar => {
     const char = normalizeCharacter(rawChar);
     return `
-    <div class="contact-item" onclick="openEditCharSheet('${char.id}')">
+    <div class="contact-item" onclick="openCharacterProfile('${char.id}')">
       ${avatarMarkup(char.avatar, 'contact-avatar')}
       <div class="contact-info">
         <div class="contact-name">${escHtml(char.name)}</div>
@@ -1958,6 +2276,79 @@ function chatFromContacts(charId) {
   }, 400);
 }
 
+function openCharacterProfile(charId) {
+  state.viewingCharacterId = charId;
+  document.getElementById('characterProfileModal')?.classList.add('open');
+  renderCharacterProfile();
+}
+
+function closeCharacterProfile(event) {
+  if (event && event.target !== document.getElementById('characterProfileModal')) return;
+  document.getElementById('characterProfileModal')?.classList.remove('open');
+  state.viewingCharacterId = null;
+}
+
+function renderCharacterProfile() {
+  const root = document.getElementById('characterProfileContent');
+  const char = state.characters.find(entry => entry.id === state.viewingCharacterId);
+  if (!root || !char) return;
+  const normalized = normalizeCharacter(char);
+  const gallery = getCharacterImageGallery(normalized.id);
+  const events = getCharacterUpcomingEvents(normalized);
+  const sentCount = getMessageCountByRole(normalized.id, 'user');
+  const receivedCount = getMessageCountByRole(normalized.id, 'assistant');
+
+  root.innerHTML = `
+    <div class="character-profile-hero">
+      ${avatarMarkup(normalized.avatar, 'character-profile-avatar')}
+      <div>
+        <div class="character-profile-name">${escHtml(normalized.name)}</div>
+        <div class="character-profile-sub">${escHtml(normalized.relationship || 'No relationship set')} • ${escHtml(getAvailabilityLabel(normalized.availability))}</div>
+      </div>
+    </div>
+
+    <div class="character-profile-stats">
+      <div><span>Closeness</span><strong>${normalized.closeness}/100</strong></div>
+      <div><span>Your messages</span><strong>${sentCount}</strong></div>
+      <div><span>Their messages</span><strong>${receivedCount}</strong></div>
+    </div>
+
+    <div class="character-profile-section">
+      <div class="character-profile-section-title">Relationship Details</div>
+      <div class="character-profile-copy-grid">
+        <div><span>Mood</span><strong>${escHtml(normalized.mood || 'Not set')}</strong></div>
+        <div><span>Last seen</span><strong>${escHtml(formatRelativeTime(getCharacterLastSeen(normalized.id)))}</strong></div>
+        ${events.map(event => `<div><span>${escHtml(event.label)}</span><strong>${escHtml(event.value)}</strong></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="character-profile-section">
+      <div class="character-profile-section-title">Profile Note</div>
+      <div class="character-profile-note">${escHtml(normalized.profileNote || normalized.privateNotes || 'No notes saved for this character yet.')}</div>
+    </div>
+
+    <div class="character-profile-section">
+      <div class="character-profile-section-title">Photo Gallery</div>
+      ${gallery.length ? `<div class="character-profile-gallery">${gallery.slice(0, 8).map(image => `<img src="${escHtml(image.url)}" alt="${escHtml(normalized.name)} photo">`).join('')}</div>` : '<div class="character-profile-note">No photos shared with this character yet.</div>'}
+    </div>
+
+    <div class="character-profile-actions">
+      <button class="btn btn-secondary" type="button" onclick="chatFromProfile('${normalized.id}')">Open Chat</button>
+      <button class="btn btn-primary" type="button" onclick="editCharacterFromProfile('${normalized.id}')">Edit Character</button>
+    </div>
+  `;
+}
+
+function chatFromProfile(charId) {
+  closeCharacterProfile();
+  chatFromContacts(charId);
+}
+
+function editCharacterFromProfile(charId) {
+  closeCharacterProfile();
+  setTimeout(() => openEditCharSheet(charId), 120);
+}
+
 function filterContacts(val) {
   renderContactsList(val);
 }
@@ -1980,8 +2371,16 @@ function openAddCharSheet() {
   document.getElementById('charTemperature').value = '';
   document.getElementById('charAutoMessageEnabled').checked = false;
   document.getElementById('charAutoMessageInterval').value = '';
+  document.getElementById('charCloseness').value = 50;
+  document.getElementById('charMood').value = '';
+  document.getElementById('charAvailability').value = 'available';
+  document.getElementById('charAnniversaryDate').value = '';
+  document.getElementById('charRecurringCheckInDays').value = '';
+  document.getElementById('charScheduledMomentTitle').value = '';
+  document.getElementById('charScheduledMomentAt').value = '';
   document.getElementById('charScenario').value = '';
   document.getElementById('charSystem').value = '';
+  document.getElementById('charProfileNote').value = '';
   document.getElementById('charPrivateNotes').value = '';
   document.getElementById('charDeleteBtn').style.display = 'none';
   document.getElementById('charModal').classList.add('open');
@@ -2004,8 +2403,16 @@ function openEditCharSheet(charId) {
   document.getElementById('charTemperature').value = char.temperature === '' ? '' : char.temperature;
   document.getElementById('charAutoMessageEnabled').checked = char.autoMessageEnabled === true;
   document.getElementById('charAutoMessageInterval').value = char.autoMessageIntervalMinutes || '';
+  document.getElementById('charCloseness').value = char.closeness;
+  document.getElementById('charMood').value = char.mood || '';
+  document.getElementById('charAvailability').value = char.availability || 'available';
+  document.getElementById('charAnniversaryDate').value = char.anniversaryDate || '';
+  document.getElementById('charRecurringCheckInDays').value = char.recurringCheckInDays || '';
+  document.getElementById('charScheduledMomentTitle').value = char.scheduledMomentTitle || '';
+  document.getElementById('charScheduledMomentAt').value = char.scheduledMomentAt || '';
   document.getElementById('charScenario').value = char.scenario || '';
   document.getElementById('charSystem').value = char.systemPrompt || '';
+  document.getElementById('charProfileNote').value = char.profileNote || '';
   document.getElementById('charPrivateNotes').value = char.privateNotes || '';
   document.getElementById('charDeleteBtn').style.display = '';
   document.getElementById('charModal').classList.add('open');
@@ -2048,8 +2455,16 @@ function saveCharacter() {
   const temperature = temperatureRaw === '' ? '' : Math.max(0, Math.min(2, Number(temperatureRaw) || 0));
   const autoMessageEnabled = document.getElementById('charAutoMessageEnabled').checked;
   const autoMessageIntervalMinutes = Math.max(0, Number(document.getElementById('charAutoMessageInterval').value || 0));
+  const closeness = Math.max(0, Math.min(100, Number(document.getElementById('charCloseness').value || 50)));
+  const mood = document.getElementById('charMood').value.trim();
+  const availability = document.getElementById('charAvailability').value || 'available';
+  const anniversaryDate = document.getElementById('charAnniversaryDate').value || '';
+  const recurringCheckInDays = Math.max(0, Number(document.getElementById('charRecurringCheckInDays').value || 0));
+  const scheduledMomentTitle = document.getElementById('charScheduledMomentTitle').value.trim();
+  const scheduledMomentAt = document.getElementById('charScheduledMomentAt').value || '';
   const scenario = document.getElementById('charScenario').value.trim();
   const systemPrompt = document.getElementById('charSystem').value.trim();
+  const profileNote = document.getElementById('charProfileNote').value.trim();
   const privateNotes = document.getElementById('charPrivateNotes').value.trim();
   const existingChar = state.editingCharId ? state.characters.find(c => c.id === state.editingCharId) : null;
 
@@ -2072,8 +2487,16 @@ function saveCharacter() {
     autoMessageEnabled,
     autoMessageIntervalMinutes,
     lastAutoMessageAt: existingChar?.lastAutoMessageAt || 0,
+    closeness,
+    mood,
+    availability,
+    anniversaryDate,
+    recurringCheckInDays,
+    scheduledMomentTitle,
+    scheduledMomentAt,
     scenario,
     systemPrompt,
+    profileNote,
     privateNotes,
   });
 
@@ -2091,6 +2514,7 @@ function saveCharacter() {
   renderContactsList();
   if (state.currentApp === 'messages') renderLINEConvList();
   if (state.currentApp === 'wallet') renderWallet();
+  if (state.currentApp === 'memory') renderMemoryViewer();
   showToast(state.editingCharId ? 'Character updated' : 'Character added');
 }
 
@@ -2105,9 +2529,11 @@ function deleteCharacter() {
   saveState();
   document.getElementById('charModal').classList.remove('open');
   if (state.activeChat === state.editingCharId) closeLINEChat(true);
+  if (state.viewingCharacterId === state.editingCharId) closeCharacterProfile();
   renderContactsList();
   if (state.currentApp === 'messages') renderLINEConvList();
   if (state.currentApp === 'wallet') renderWallet();
+  if (state.currentApp === 'memory') renderMemoryViewer();
   showToast('Character deleted');
 }
 
@@ -2333,6 +2759,12 @@ function renderWorldBook() {
       <div class="worldbook-entry-meta">
         <input
           class="worldbook-entry-input"
+          value="${escHtml(entry.category || '')}"
+          placeholder="Category: lore, people, places"
+          oninput="updateWBCategory('${entry.id}', this.value)"
+        >
+        <input
+          class="worldbook-entry-input"
           value="${escHtml(stringifyTagList(entry.keywords))}"
           placeholder="Keywords: school, breakup, Tokyo"
           oninput="updateWBKeywords('${entry.id}', this.value)"
@@ -2376,6 +2808,7 @@ function addWorldBookEntry() {
   state.worldBook.push(normalizeWorldBookEntry({ title: 'New Entry', scope: 'conditional', priority: 50 }));
   saveState();
   renderWorldBook();
+  if (state.currentApp === 'memory') renderMemoryViewer();
   setTimeout(() => {
     const inputs = document.querySelectorAll('.worldbook-entry-title-input');
     if (inputs.length) inputs[inputs.length - 1].focus();
@@ -2384,12 +2817,20 @@ function addWorldBookEntry() {
 
 function updateWBTitle(id, val) {
   const e = state.worldBook.find(x => x.id === id);
-  if (e) { e.title = val; saveState(); }
+  if (e) {
+    e.title = val;
+    saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
+  }
 }
 
 function updateWBContent(id, val) {
   const e = state.worldBook.find(x => x.id === id);
-  if (e) { e.content = val; saveState(); }
+  if (e) {
+    e.content = val;
+    saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
+  }
 }
 
 function updateWBKeywords(id, val) {
@@ -2397,6 +2838,16 @@ function updateWBKeywords(id, val) {
   if (e) {
     e.keywords = parseTagList(val);
     saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
+  }
+}
+
+function updateWBCategory(id, val) {
+  const e = state.worldBook.find(x => x.id === id);
+  if (e) {
+    e.category = val.trim();
+    saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
   }
 }
 
@@ -2405,6 +2856,7 @@ function updateWBScope(id, val) {
   if (e) {
     e.scope = val === 'always' ? 'always' : 'conditional';
     saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
   }
 }
 
@@ -2413,6 +2865,7 @@ function updateWBPriority(id, val) {
   if (e) {
     e.priority = Math.max(0, Math.min(100, Number(val) || 0));
     saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
   }
 }
 
@@ -2421,6 +2874,7 @@ function updateWBEnabled(id, checked) {
   if (e) {
     e.enabled = Boolean(checked);
     saveState();
+    if (state.currentApp === 'memory') renderMemoryViewer();
   }
 }
 
@@ -2428,6 +2882,7 @@ function deleteWBEntry(id) {
   state.worldBook = state.worldBook.filter(x => x.id !== id);
   saveState();
   renderWorldBook();
+  if (state.currentApp === 'memory') renderMemoryViewer();
 }
 
 // ============================================================
