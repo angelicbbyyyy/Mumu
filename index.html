@@ -984,6 +984,16 @@
           </div>
         </div>
 
+        <div class="form-section">
+          <div class="form-row form-row-split">
+            <span class="form-label">Memories</span>
+            <button class="btn btn-danger" type="button" style="padding:4px 10px;font-size:12px;" onclick="clearCharacterMemories()">Clear All</button>
+          </div>
+          <div class="char-memories-list" id="charSettingsMemoriesList">
+            <span class="memories-empty">No memories yet. They generate automatically during chat.</span>
+          </div>
+        </div>
+
         <div class="modal-actions">
           <button class="btn btn-secondary" type="button" onclick="closeCharacterSettings()">Cancel</button>
           <button class="btn btn-primary" type="button" onclick="saveCharacterSettings()">Save</button>

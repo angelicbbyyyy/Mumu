@@ -47,6 +47,7 @@ const state = {
     transactions: [],
   },
   wallpaper: null,             // CSS background value
+  memories: {},                // { charId: [{ id, content, ts }] }
 };
 
 // ============================================================
@@ -563,6 +564,7 @@ function saveState() {
       settings: state.settings,
       wallet: state.wallet,
       wallpaper: state.wallpaper,
+      memories: state.memories,
     }));
   } catch (e) { console.warn('saveState failed', e); }
 }
@@ -580,6 +582,7 @@ function loadState() {
     if (s.settings)      Object.assign(state.settings, DEFAULT_SETTINGS, s.settings);
     if (s.wallet)        state.wallet = normalizeWallet(s.wallet);
     if (s.wallpaper)     state.wallpaper     = s.wallpaper;
+    if (s.memories)      state.memories      = s.memories;
   } catch (e) { console.warn('loadState failed', e); }
 }
 
@@ -1558,6 +1561,11 @@ async function sendLineMessage() {
     markLastUserMsgRead();
     const shouldStage = state.currentApp === 'messages' && state.activeChat;
     await deliverCharacterResponse(state.activeChat, reply, { read: true, staged: shouldStage });
+    // Fire-and-forget memory generation every 4 messages (2 back-and-forth exchanges)
+    const convLen = (state.conversations[state.activeChat] || []).length;
+    if (convLen >= 4 && convLen % 4 === 0) {
+      generateMemory(state.activeChat).catch(() => {});
+    }
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
       const preview = splitAssistantReplyIntoMessages(reply)[0] || reply;
@@ -2360,6 +2368,13 @@ function buildPromptBundle(char, history) {
     char.systemPrompt ? `Behavior prompt:\n${char.systemPrompt}` : '',
   ].filter(Boolean).join('\n\n') : '';
 
+  const charMemories = char ? (state.memories[char.id] || []) : [];
+  const memoriesBlock = charMemories.length ? [
+    '# Memories',
+    `Things you remember about ${state.persona.userAlias || 'the user'}:`,
+    ...charMemories.map(m => `- ${m.content}`),
+  ].join('\n') : '';
+
   const chatContext = history.length ? [
     '# Chat Context',
     `Recent message count: ${history.length}`,
@@ -2372,8 +2387,71 @@ function buildPromptBundle(char, history) {
     personaIdentity,
     worldBlock,
     characterBlock,
+    memoriesBlock,
     chatContext,
   ].filter(Boolean).join('\n\n---\n\n') || 'You are a helpful assistant.';
+}
+
+async function generateMemory(charId) {
+  const { apiKey, model } = state.settings;
+  if (!apiKey) return;
+
+  const char = state.characters.find(c => c.id === charId);
+  if (!char) return;
+
+  const conv = state.conversations[charId] || [];
+  if (conv.length < 4) return;
+
+  const recent = conv.slice(-10);
+  const userName = state.persona.userAlias || 'User';
+  const formatted = recent
+    .map(m => `${m.role === 'user' ? userName : char.name}: ${m.content}`)
+    .join('\n');
+
+  const system = `You extract concise memory facts from conversations. Return ONLY a valid JSON array of short strings. No explanation, no markdown fences, just the raw JSON array.`;
+  const userMessage = `Extract 1-3 important facts about ${userName} to remember for future conversations with them. Focus on personal details, preferences, feelings, or notable events they shared.\n\nConversation:\n${formatted}`;
+
+  const provDef = getProviderConfig();
+  const baseUrl = provDef.baseUrl;
+  const activeModel = char.modelOverride?.trim() || model;
+  const fakeMsg = [normalizeConversationMessage({ role: 'user', content: userMessage, ts: Date.now(), read: true })];
+
+  let rawResponse;
+  try {
+    if (provDef.format === 'anthropic') {
+      rawResponse = await callAnthropic(baseUrl, apiKey, activeModel, system, fakeMsg, provDef, null);
+    } else {
+      rawResponse = await callOpenAICompat(baseUrl, apiKey, activeModel, system, fakeMsg, provDef, null);
+    }
+  } catch (e) {
+    console.warn('[Memory] Generation failed:', e);
+    return;
+  }
+
+  let facts = [];
+  try {
+    const match = rawResponse.match(/\[[\s\S]*?\]/);
+    if (match) facts = JSON.parse(match[0]).filter(f => typeof f === 'string' && f.trim());
+  } catch (_) {
+    facts = rawResponse.split('\n')
+      .map(l => l.replace(/^[-*•\d.]\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  if (!facts.length) return;
+
+  if (!state.memories[charId]) state.memories[charId] = [];
+  const now = Date.now();
+  for (const content of facts) {
+    state.memories[charId].push({ id: uuid(), content, ts: now });
+  }
+  // Keep max 30 memories, pruning oldest
+  if (state.memories[charId].length > 30) {
+    state.memories[charId] = state.memories[charId].slice(-30);
+  }
+  saveState();
+  console.log(`[Memory] Generated ${facts.length} new memories for ${char.name}`);
 }
 
 async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic, temperature = null) {
@@ -3206,6 +3284,7 @@ function openCharacterSettings(charId = state.viewingCharacterId || state.active
   document.getElementById('charSettingsMiniMaxVoiceSpeed').value = char.minimaxVoiceSpeed || 1;
   document.getElementById('charSettingsMiniMaxLanguage').value = char.minimaxLanguage || 'auto';
   updateCharacterVoiceSpeedLabel(char.minimaxVoiceSpeed || 1);
+  renderCharacterMemoriesInSettings(charId);
   document.getElementById('characterSettingsModal').classList.add('open');
 }
 
@@ -3219,6 +3298,38 @@ function updateCharacterVoiceSpeedLabel(value) {
   const label = document.getElementById('charSettingsMiniMaxVoiceSpeedLabel');
   if (!label) return;
   label.textContent = `${Number(value || 1).toFixed(1)}x`;
+}
+
+function renderCharacterMemoriesInSettings(charId) {
+  const list = document.getElementById('charSettingsMemoriesList');
+  if (!list) return;
+  const memories = state.memories[charId] || [];
+  if (!memories.length) {
+    list.innerHTML = '<span class="memories-empty">No memories yet. They generate automatically during chat.</span>';
+    return;
+  }
+  list.innerHTML = memories.map(m =>
+    `<div class="memory-item">
+      <span class="memory-text">${escHtml(m.content)}</span>
+      <button class="memory-delete-btn" type="button" onclick="deleteCharacterMemory('${escHtml(charId)}','${escHtml(m.id)}')" aria-label="Delete">✕</button>
+    </div>`
+  ).join('');
+}
+
+function deleteCharacterMemory(charId, memId) {
+  if (!state.memories[charId]) return;
+  state.memories[charId] = state.memories[charId].filter(m => m.id !== memId);
+  saveState();
+  renderCharacterMemoriesInSettings(charId);
+}
+
+function clearCharacterMemories() {
+  const charId = state.settingsCharId;
+  if (!charId) return;
+  state.memories[charId] = [];
+  saveState();
+  renderCharacterMemoriesInSettings(charId);
+  showToast('Memories cleared');
 }
 
 function saveCharacterSettings() {
