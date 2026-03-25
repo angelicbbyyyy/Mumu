@@ -582,7 +582,18 @@ function loadState() {
     if (s.settings)      Object.assign(state.settings, DEFAULT_SETTINGS, s.settings);
     if (s.wallet)        state.wallet = normalizeWallet(s.wallet);
     if (s.wallpaper)     state.wallpaper     = s.wallpaper;
-    if (s.memories)      state.memories      = s.memories;
+    if (s.memories) {
+      // Migrate old flat-array format → new two-tier format
+      const migrated = {};
+      for (const [charId, val] of Object.entries(s.memories)) {
+        if (Array.isArray(val)) {
+          migrated[charId] = { summary: '', summaryUpdatedAt: 0, recentNotes: val.slice(-5) };
+        } else {
+          migrated[charId] = val;
+        }
+      }
+      state.memories = migrated;
+    }
   } catch (e) { console.warn('loadState failed', e); }
 }
 
@@ -1561,10 +1572,12 @@ async function sendLineMessage() {
     markLastUserMsgRead();
     const shouldStage = state.currentApp === 'messages' && state.activeChat;
     await deliverCharacterResponse(state.activeChat, reply, { read: true, staged: shouldStage });
-    // Fire-and-forget memory generation every 4 messages (2 back-and-forth exchanges)
+    // Fire-and-forget memory: summary every 10 messages, recent notes every 4
     const convLen = (state.conversations[state.activeChat] || []).length;
-    if (convLen >= 4 && convLen % 4 === 0) {
-      generateMemory(state.activeChat).catch(() => {});
+    if (convLen >= 10 && convLen % 10 === 0) {
+      updateMemorySummary(state.activeChat).catch(() => {});
+    } else if (convLen >= 4 && convLen % 4 === 0) {
+      generateRecentNotes(state.activeChat).catch(() => {});
     }
     if (state.currentApp !== 'messages') {
       const char = state.characters.find(entry => entry.id === state.activeChat);
@@ -2368,12 +2381,21 @@ function buildPromptBundle(char, history) {
     char.systemPrompt ? `Behavior prompt:\n${char.systemPrompt}` : '',
   ].filter(Boolean).join('\n\n') : '';
 
-  const charMemories = char ? (state.memories[char.id] || []) : [];
-  const memoriesBlock = charMemories.length ? [
-    '# Memories',
-    `Things you remember about ${state.persona.userAlias || 'the user'}:`,
-    ...charMemories.map(m => `- ${m.content}`),
-  ].join('\n') : '';
+  const charMem = char ? (state.memories[char.id] || {}) : {};
+  const memSummary = charMem.summary || '';
+  const memNotes = Array.isArray(charMem.recentNotes) ? charMem.recentNotes : [];
+  const userName = state.persona.userAlias || 'the user';
+  let memoriesBlock = '';
+  if (memSummary || memNotes.length) {
+    const parts = ['# Memories'];
+    if (memSummary) {
+      parts.push(`What you know about ${userName}:\n${memSummary}`);
+    }
+    if (memNotes.length) {
+      parts.push(`Things you've noticed recently:\n${memNotes.map(n => `- ${n.content}`).join('\n')}`);
+    }
+    memoriesBlock = parts.join('\n\n');
+  }
 
   const chatContext = history.length ? [
     '# Chat Context',
@@ -2392,66 +2414,105 @@ function buildPromptBundle(char, history) {
   ].filter(Boolean).join('\n\n---\n\n') || 'You are a helpful assistant.';
 }
 
-async function generateMemory(charId) {
+function getMemoryBucket(charId) {
+  if (!state.memories[charId] || Array.isArray(state.memories[charId])) {
+    state.memories[charId] = { summary: '', summaryUpdatedAt: 0, recentNotes: [] };
+  }
+  return state.memories[charId];
+}
+
+async function callMemoryLLM(charId, system, userMessage) {
   const { apiKey, model } = state.settings;
-  if (!apiKey) return;
-
+  if (!apiKey) return null;
   const char = state.characters.find(c => c.id === charId);
-  if (!char) return;
+  const provDef = getProviderConfig();
+  const activeModel = (char?.modelOverride?.trim()) || model;
+  const msg = [normalizeConversationMessage({ role: 'user', content: userMessage, ts: Date.now(), read: true })];
+  if (provDef.format === 'anthropic') {
+    return callAnthropic(provDef.baseUrl, apiKey, activeModel, system, msg, provDef, null);
+  }
+  return callOpenAICompat(provDef.baseUrl, apiKey, activeModel, system, msg, provDef, null);
+}
 
+function formatConvSnippet(messages, charName, userName, count) {
+  return messages.slice(-count)
+    .map(m => `${m.role === 'user' ? userName : charName}: ${m.content}`)
+    .join('\n');
+}
+
+async function generateRecentNotes(charId) {
+  const char = state.characters.find(c => c.id === charId);
+  if (!char || !state.settings.apiKey) return;
   const conv = state.conversations[charId] || [];
   if (conv.length < 4) return;
 
-  const recent = conv.slice(-10);
   const userName = state.persona.userAlias || 'User';
-  const formatted = recent
-    .map(m => `${m.role === 'user' ? userName : char.name}: ${m.content}`)
-    .join('\n');
+  const snippet = formatConvSnippet(conv, char.name, userName, 6);
 
-  const system = `You extract concise memory facts from conversations. Return ONLY a valid JSON array of short strings. No explanation, no markdown fences, just the raw JSON array.`;
-  const userMessage = `Extract 1-3 important facts about ${userName} to remember for future conversations with them. Focus on personal details, preferences, feelings, or notable events they shared.\n\nConversation:\n${formatted}`;
+  const system = `Extract specific, concrete observations from conversations. Return ONLY a valid JSON array of short strings (1 sentence each). No explanation, no markdown fences.`;
+  const userMessage = `Extract 1-3 specific new things ${char.name} would notice or want to remember about ${userName} from this conversation. Focus on what they revealed, felt, mentioned, or did that feels meaningful.\n\nConversation:\n${snippet}`;
 
-  const provDef = getProviderConfig();
-  const baseUrl = provDef.baseUrl;
-  const activeModel = char.modelOverride?.trim() || model;
-  const fakeMsg = [normalizeConversationMessage({ role: 'user', content: userMessage, ts: Date.now(), read: true })];
+  let raw;
+  try { raw = await callMemoryLLM(charId, system, userMessage); }
+  catch (e) { console.warn('[Memory] Recent notes failed:', e); return; }
 
-  let rawResponse;
+  let notes = [];
   try {
-    if (provDef.format === 'anthropic') {
-      rawResponse = await callAnthropic(baseUrl, apiKey, activeModel, system, fakeMsg, provDef, null);
-    } else {
-      rawResponse = await callOpenAICompat(baseUrl, apiKey, activeModel, system, fakeMsg, provDef, null);
-    }
-  } catch (e) {
-    console.warn('[Memory] Generation failed:', e);
-    return;
-  }
-
-  let facts = [];
-  try {
-    const match = rawResponse.match(/\[[\s\S]*?\]/);
-    if (match) facts = JSON.parse(match[0]).filter(f => typeof f === 'string' && f.trim());
+    const match = raw.match(/\[[\s\S]*?\]/);
+    if (match) notes = JSON.parse(match[0]).filter(f => typeof f === 'string' && f.trim());
   } catch (_) {
-    facts = rawResponse.split('\n')
-      .map(l => l.replace(/^[-*•\d.]\s*/, '').trim())
-      .filter(Boolean)
-      .slice(0, 3);
+    notes = raw.split('\n').map(l => l.replace(/^[-*•\d.]\s*/, '').trim()).filter(Boolean).slice(0, 3);
   }
+  if (!notes.length) return;
 
-  if (!facts.length) return;
-
-  if (!state.memories[charId]) state.memories[charId] = [];
+  const bucket = getMemoryBucket(charId);
   const now = Date.now();
-  for (const content of facts) {
-    state.memories[charId].push({ id: uuid(), content, ts: now });
+  for (const content of notes) {
+    bucket.recentNotes.push({ id: uuid(), content, ts: now });
   }
-  // Keep max 30 memories, pruning oldest
-  if (state.memories[charId].length > 30) {
-    state.memories[charId] = state.memories[charId].slice(-30);
-  }
+  if (bucket.recentNotes.length > 5) bucket.recentNotes = bucket.recentNotes.slice(-5);
   saveState();
-  console.log(`[Memory] Generated ${facts.length} new memories for ${char.name}`);
+  console.log(`[Memory] Noted ${notes.length} recent observations for ${char.name}`);
+}
+
+async function updateMemorySummary(charId) {
+  const char = state.characters.find(c => c.id === charId);
+  if (!char || !state.settings.apiKey) return;
+  const conv = state.conversations[charId] || [];
+  if (conv.length < 10) return;
+
+  const bucket = getMemoryBucket(charId);
+  const userName = state.persona.userAlias || 'User';
+  const snippet = formatConvSnippet(conv, char.name, userName, 8);
+  const notesText = bucket.recentNotes.length
+    ? bucket.recentNotes.map(n => `- ${n.content}`).join('\n')
+    : 'None';
+  const existingSummary = bucket.summary || 'None yet.';
+
+  const system = `You help characters maintain a rich, evolving understanding of someone they care about. Write naturally and warmly, from the character's perspective. Return ONLY the paragraph, no labels or quotes.`;
+  const userMessage = `${char.name} has been getting to know ${userName}. Update ${char.name}'s understanding based on everything known so far.
+
+Current understanding:
+${existingSummary}
+
+Recent observations:
+${notesText}
+
+New conversation:
+${snippet}
+
+Write a 2-4 sentence paragraph of what ${char.name} knows and genuinely feels about ${userName} — their personality, what matters to them, how they express themselves, how the relationship has grown. Make it feel lived-in and specific, not generic. Return ONLY the paragraph.`;
+
+  let raw;
+  try { raw = await callMemoryLLM(charId, system, userMessage); }
+  catch (e) { console.warn('[Memory] Summary update failed:', e); return; }
+
+  if (!raw?.trim()) return;
+  bucket.summary = raw.trim();
+  bucket.summaryUpdatedAt = Date.now();
+  bucket.recentNotes = []; // folded into summary
+  saveState();
+  console.log(`[Memory] Updated relationship summary for ${char.name}`);
 }
 
 async function callAnthropic(baseUrl, apiKey, model, system, messages, provDef = PROVIDERS.anthropic, temperature = null) {
@@ -3301,24 +3362,40 @@ function updateCharacterVoiceSpeedLabel(value) {
 }
 
 function renderCharacterMemoriesInSettings(charId) {
-  const list = document.getElementById('charSettingsMemoriesList');
-  if (!list) return;
-  const memories = state.memories[charId] || [];
-  if (!memories.length) {
-    list.innerHTML = '<span class="memories-empty">No memories yet. They generate automatically during chat.</span>';
+  const container = document.getElementById('charSettingsMemoriesList');
+  if (!container) return;
+  const bucket = state.memories[charId] || {};
+  const summary = bucket.summary || '';
+  const notes = Array.isArray(bucket.recentNotes) ? bucket.recentNotes : [];
+
+  if (!summary && !notes.length) {
+    container.innerHTML = '<span class="memories-empty">No memories yet — they build up automatically as you chat.</span>';
     return;
   }
-  list.innerHTML = memories.map(m =>
-    `<div class="memory-item">
-      <span class="memory-text">${escHtml(m.content)}</span>
-      <button class="memory-delete-btn" type="button" onclick="deleteCharacterMemory('${escHtml(charId)}','${escHtml(m.id)}')" aria-label="Delete">✕</button>
-    </div>`
-  ).join('');
+
+  let html = '';
+  if (summary) {
+    html += `<div class="memory-summary-block">
+      <span class="memory-summary-label">What they know about you</span>
+      <p class="memory-summary-text">${escHtml(summary)}</p>
+    </div>`;
+  }
+  if (notes.length) {
+    html += `<div class="memory-notes-label">Recent observations</div>`;
+    html += notes.map(n =>
+      `<div class="memory-item">
+        <span class="memory-text">${escHtml(n.content)}</span>
+        <button class="memory-delete-btn" type="button" onclick="deleteRecentNote('${escHtml(charId)}','${escHtml(n.id)}')" aria-label="Delete">✕</button>
+      </div>`
+    ).join('');
+  }
+  container.innerHTML = html;
 }
 
-function deleteCharacterMemory(charId, memId) {
-  if (!state.memories[charId]) return;
-  state.memories[charId] = state.memories[charId].filter(m => m.id !== memId);
+function deleteRecentNote(charId, noteId) {
+  const bucket = state.memories[charId];
+  if (!bucket || !Array.isArray(bucket.recentNotes)) return;
+  bucket.recentNotes = bucket.recentNotes.filter(n => n.id !== noteId);
   saveState();
   renderCharacterMemoriesInSettings(charId);
 }
@@ -3326,7 +3403,7 @@ function deleteCharacterMemory(charId, memId) {
 function clearCharacterMemories() {
   const charId = state.settingsCharId;
   if (!charId) return;
-  state.memories[charId] = [];
+  state.memories[charId] = { summary: '', summaryUpdatedAt: 0, recentNotes: [] };
   saveState();
   renderCharacterMemoriesInSettings(charId);
   showToast('Memories cleared');
