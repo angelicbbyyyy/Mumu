@@ -32,7 +32,6 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
-    chatWallpaper: '',         // CSS background for the chat interface
   },
   wallet: {
     balance: 120,
@@ -158,6 +157,7 @@ function normalizeCharacter(raw = {}) {
     scenario: raw.scenario || '',
     systemPrompt: raw.systemPrompt || '',
     privateNotes: raw.privateNotes || '',
+    chatWallpaper: raw.chatWallpaper || '',
   };
 }
 
@@ -619,11 +619,15 @@ function finalizeWallpaperChange(message = 'Wallpaper updated') {
 }
 
 function promptChatWallpaper() {
-  const current = state.settings.chatWallpaper || '';
+  if (!state.activeChat) return;
+  const char = state.characters.find(c => c.id === state.activeChat);
+  if (!char) return;
+
+  const current = char.chatWallpaper || '';
   const val = prompt('Enter a valid CSS background property for Chat\n(e.g., #FFE4EE, url(https://...), or linear-gradient(...)):', current);
   if (val !== null) {
-    state.settings.chatWallpaper = val.trim();
-    saveSettings();
+    char.chatWallpaper = val.trim();
+    saveState();
     applyChatWallpaper();
   }
 }
@@ -631,10 +635,13 @@ function promptChatWallpaper() {
 function applyChatWallpaper() {
   const lineChat = document.getElementById('lineChat');
   if (!lineChat) return;
-  if (state.settings.chatWallpaper) {
-    lineChat.style.background = state.settings.chatWallpaper;
+  
+  const char = state.activeChat ? state.characters.find(c => c.id === state.activeChat) : null;
+  if (char && char.chatWallpaper) {
+    lineChat.style.background = char.chatWallpaper;
   } else {
-    lineChat.style.background = ''; // Reverts to CSS variable
+    // Reverts to the CSS fallback variable
+    lineChat.style.background = '';
   }
 }
 
@@ -885,6 +892,7 @@ function openLINEChat(charId) {
   chat.classList.add('open');
   home.classList.add('hidden');
 
+  applyChatWallpaper();
   renderLINEMessages();
   renderLineAttachmentPreview();
   setTimeout(() => document.getElementById('lineInput').focus(), 350);
@@ -1538,7 +1546,6 @@ function onProviderChange(doSave = true) {
   renderModelSelect();
 
   if (doSave) saveSettings();
-  applyChatWallpaper();
 }
 
 function saveSettings() {
