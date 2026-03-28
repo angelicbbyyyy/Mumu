@@ -539,8 +539,7 @@ function updateWallpaperPreview(value) {
 function updateClock() {
   const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   document.getElementById('statusTime').textContent = timeStr;
-  const homeClock = document.getElementById('homeClockTime');
-  if (homeClock) homeClock.textContent = timeStr;
+  // Intentionally NOT updating homeClockTime so it remains the styled "July" text
 }
 
 // ============================================================
