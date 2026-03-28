@@ -6,7 +6,7 @@
   <title>iPhone Chatbot Simulator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&family=Inter:wght@400;500;600;700&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
@@ -319,6 +319,14 @@
               <line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
           </button>
+          <button class="line-input-icon-btn" onclick="retryLastMessage()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <polyline points="23 20 23 14 17 14"></polyline>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"></path>
+              <path d="M3.51 15A9 9 0 0 0 18.36 18.36L23 14"></path>
+            </svg>
+          </button>
           <!-- Center: pill input -->
           <div class="line-input-wrap">
             <textarea
@@ -606,8 +614,12 @@
             <input class="settings-input" id="settingsUserName" type="text" placeholder="You" oninput="saveSettings()">
           </div>
           <div class="settings-row" style="cursor:pointer;" onclick="openWallpaperPicker()">
-            <div class="settings-row-icon" style="background:#FFD6E7;">🖼️</div>
-            <div class="settings-row-label" style="color:#FF6B9D;">Change Wallpaper</div>
+            <div class="settings-row-icon" style="background:#e8e8e8;">🖼️</div>
+            <div class="settings-row-label" style="color:#111;">Change Home Wallpaper</div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;" onclick="promptChatWallpaper()">
+            <div class="settings-row-icon" style="background:#e8e8e8;">🎨</div>
+            <div class="settings-row-label" style="color:#111;">Change Chat CSS/Wallpaper</div>
           </div>
         </div>
 
@@ -622,12 +634,12 @@
         <div class="settings-section-label">Data</div>
         <div class="settings-group">
           <div class="settings-row" style="cursor:pointer;" onclick="exportStudioData()">
-            <div class="settings-row-icon" style="background:#FFE4EE;">💾</div>
-            <div class="settings-row-label" style="color:#FF6B9D;">Export Studio Data</div>
+            <div class="settings-row-icon" style="background:#e8e8e8;">💾</div>
+            <div class="settings-row-label" style="color:#111;">Export Studio Data</div>
           </div>
           <div class="settings-row" style="cursor:pointer;" onclick="triggerImportStudioData()">
-            <div class="settings-row-icon" style="background:#FFD6E7;">📥</div>
-            <div class="settings-row-label" style="color:#FF6B9D;">Import Studio Data</div>
+            <div class="settings-row-icon" style="background:#e8e8e8;">📥</div>
+            <div class="settings-row-label" style="color:#111;">Import Studio Data</div>
           </div>
           <div class="settings-row" style="cursor:pointer;" onclick="clearAllChats()">
             <div class="settings-row-icon" style="background:#fff0ef;">🗑️</div>

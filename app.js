@@ -32,6 +32,7 @@ const state = {
     model: 'claude-sonnet-4-6',
     userName: 'You',
     memoryNote: '',
+    chatWallpaper: '',         // CSS background for the chat interface
   },
   wallet: {
     balance: 120,
@@ -617,6 +618,26 @@ function finalizeWallpaperChange(message = 'Wallpaper updated') {
   }
 }
 
+function promptChatWallpaper() {
+  const current = state.settings.chatWallpaper || '';
+  const val = prompt('Enter a valid CSS background property for Chat\n(e.g., #FFE4EE, url(https://...), or linear-gradient(...)):', current);
+  if (val !== null) {
+    state.settings.chatWallpaper = val.trim();
+    saveSettings();
+    applyChatWallpaper();
+  }
+}
+
+function applyChatWallpaper() {
+  const lineChat = document.getElementById('lineChat');
+  if (!lineChat) return;
+  if (state.settings.chatWallpaper) {
+    lineChat.style.background = state.settings.chatWallpaper;
+  } else {
+    lineChat.style.background = ''; // Reverts to CSS variable
+  }
+}
+
 function openWallpaperPicker() {
   renderWallpaperSwatches();
   document.getElementById('wallpaperUrl').value = /^https?:\/\//i.test(state.wallpaper || '') ? state.wallpaper : '';
@@ -1032,6 +1053,39 @@ async function sendLineMessage() {
 
   const outgoing = appendMsg('user', text);
   outgoing.attachments = attachments.map(normalizeMessageAttachment);
+  saveState();
+  renderLINEMessages();
+  showTypingIndicator();
+  document.getElementById('lineMessagesArea').scrollTop = 99999;
+
+  try {
+    const reply = await callAPI(state.activeChat);
+    removeTypingIndicator();
+    markLastUserMsgRead();
+    appendMsg('assistant', reply);
+    renderLINEMessages();
+  } catch (err) {
+    removeTypingIndicator();
+    await showApiError(err);
+  }
+
+  isSending = false;
+  updateLineSendBtn();
+}
+
+async function retryLastMessage() {
+  if (isSending || !state.activeChat) return;
+  const chat = state.conversations[state.activeChat];
+  if (!chat || !chat.length) return;
+
+  const lastMsg = chat[chat.length - 1];
+  if (lastMsg.role === 'assistant') {
+    // Drop the AI's failed or bad response to regenerate
+    chat.pop();
+  }
+  
+  // Rerun the API call
+  isSending = true;
   saveState();
   renderLINEMessages();
   showTypingIndicator();
@@ -1484,6 +1538,7 @@ function onProviderChange(doSave = true) {
   renderModelSelect();
 
   if (doSave) saveSettings();
+  applyChatWallpaper();
 }
 
 function saveSettings() {
