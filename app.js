@@ -623,25 +623,97 @@ function promptChatWallpaper() {
   const char = state.characters.find(c => c.id === state.activeChat);
   if (!char) return;
 
-  const current = char.chatWallpaper || '';
-  const val = prompt('Enter a valid CSS background property for Chat\n(e.g., #FFE4EE, url(https://...), or linear-gradient(...)):', current);
-  if (val !== null) {
-    char.chatWallpaper = val.trim();
-    saveState();
-    applyChatWallpaper();
+  // Show the modal
+  const modal = document.getElementById('chatWallpaperModal');
+  modal.classList.add('visible');
+
+  // Populate preview if existing wallpaper
+  const preview = document.getElementById('chatWallpaperPreview');
+  const urlInput = document.getElementById('chatWallpaperUrl');
+  if (char.chatWallpaper && char.chatWallpaper.startsWith('data:')) {
+    preview.innerHTML = `<img src="${char.chatWallpaper}" style="width:100%;height:120px;object-fit:cover;border-radius:8px;">`;
+    urlInput.value = '';
+  } else if (char.chatWallpaper && /^https?:\/\//i.test(char.chatWallpaper)) {
+    preview.textContent = 'No wallpaper selected';
+    urlInput.value = char.chatWallpaper;
+  } else {
+    preview.textContent = 'No wallpaper selected';
+    urlInput.value = '';
   }
 }
 
+function closeChatWallpaperPicker(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('chatWallpaperModal').classList.remove('visible');
+}
+
+function handleChatWallpaperImageChange(event) {
+  const file = event.target.files?.[0];
+  if (!file || !state.activeChat) return;
+  const char = state.characters.find(c => c.id === state.activeChat);
+  if (!char) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    char.chatWallpaper = result;
+    saveState();
+    applyChatWallpaper();
+
+    // Update preview
+    const preview = document.getElementById('chatWallpaperPreview');
+    preview.innerHTML = `<img src="${result}" style="width:100%;height:120px;object-fit:cover;border-radius:8px;">`;
+    document.getElementById('chatWallpaperUrl').value = '';
+    event.target.value = '';
+    showToast('Chat wallpaper updated');
+  };
+  reader.readAsDataURL(file);
+}
+
+function applyChatWallpaperUrl() {
+  if (!state.activeChat) return;
+  const char = state.characters.find(c => c.id === state.activeChat);
+  if (!char) return;
+
+  const url = document.getElementById('chatWallpaperUrl').value.trim();
+  if (!url) return;
+
+  char.chatWallpaper = url;
+  saveState();
+  applyChatWallpaper();
+  closeChatWallpaperPicker();
+  showToast('Chat wallpaper updated');
+}
+
+function clearChatWallpaper() {
+  if (!state.activeChat) return;
+  const char = state.characters.find(c => c.id === state.activeChat);
+  if (!char) return;
+
+  char.chatWallpaper = '';
+  saveState();
+  applyChatWallpaper();
+  document.getElementById('chatWallpaperPreview').textContent = 'No wallpaper selected';
+  document.getElementById('chatWallpaperUrl').value = '';
+  showToast('Chat wallpaper cleared');
+}
+
 function applyChatWallpaper() {
+  const area = document.getElementById('lineMessagesArea');
   const lineChat = document.getElementById('lineChat');
   if (!lineChat) return;
   
   const char = state.activeChat ? state.characters.find(c => c.id === state.activeChat) : null;
   if (char && char.chatWallpaper) {
-    lineChat.style.background = char.chatWallpaper;
+    // Apply as background image to the messages area
+    lineChat.style.backgroundImage = `url('${char.chatWallpaper}')`;
+    lineChat.style.backgroundSize = 'cover';
+    lineChat.style.backgroundPosition = 'center';
   } else {
-    // Reverts to the CSS fallback variable
-    lineChat.style.background = '';
+    // Revert to default dotted pattern
+    lineChat.style.backgroundImage = '';
+    lineChat.style.backgroundSize = '';
+    lineChat.style.backgroundPosition = '';
   }
 }
 

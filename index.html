@@ -6,7 +6,7 @@
   <title>iPhone Chatbot Simulator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&family=Inter:wght@400;500;600;700&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&family=Inter:wght@400;500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
@@ -762,6 +762,38 @@
     <input type="file" id="charAvatarInput" accept="image/*" style="display:none" onchange="handleCharacterAvatarChange(event)">
     <input type="file" id="wallpaperImageInput" accept="image/*" style="display:none" onchange="handleWallpaperImageChange(event)">
     <input type="file" id="lineImageInput" accept="image/*" style="display:none" onchange="handleLineImageChange(event)">
+    <input type="file" id="chatWallpaperImageInput" accept="image/*" style="display:none" onchange="handleChatWallpaperImageChange(event)">
+
+    <!-- Chat Wallpaper Picker Modal -->
+    <div class="modal-overlay" id="chatWallpaperModal" onclick="closeChatWallpaperPicker(event)">
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">Chat Wallpaper</div>
+
+        <div style="padding:0 16px 8px;">
+          <div class="settings-section-label" style="padding:0 0 8px;">Upload Image</div>
+          <div class="settings-group" style="margin-bottom:12px;">
+            <div class="settings-row" style="display:block;">
+              <div class="upload-actions">
+                <button class="btn btn-secondary" type="button" onclick="document.getElementById('chatWallpaperImageInput').click()">Choose Image</button>
+                <button class="btn btn-secondary" type="button" onclick="clearChatWallpaper()">Clear</button>
+              </div>
+              <div class="image-preview-card wallpaper-preview-card" id="chatWallpaperPreview">No wallpaper selected</div>
+            </div>
+          </div>
+          <div class="settings-section-label" style="padding:0 0 8px;">Image URL</div>
+          <div class="settings-group">
+            <div class="settings-row">
+              <input class="settings-input" id="chatWallpaperUrl" type="url" placeholder="https://example.com/image.jpg" style="text-align:left;">
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeChatWallpaperPicker()">Cancel</button>
+            <button class="btn btn-primary" onclick="applyChatWallpaperUrl()">Apply URL</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="modal-overlay" id="voomModal" onclick="closeVoomComposer(event)">
       <div class="modal-sheet">
