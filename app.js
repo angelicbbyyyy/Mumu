@@ -625,7 +625,7 @@ function promptChatWallpaper() {
 
   // Show the modal
   const modal = document.getElementById('chatWallpaperModal');
-  modal.classList.add('visible');
+  modal.classList.add('open');
 
   // Populate preview if existing wallpaper
   const preview = document.getElementById('chatWallpaperPreview');
@@ -644,7 +644,7 @@ function promptChatWallpaper() {
 
 function closeChatWallpaperPicker(e) {
   if (e && e.target !== e.currentTarget) return;
-  document.getElementById('chatWallpaperModal').classList.remove('visible');
+  document.getElementById('chatWallpaperModal').classList.remove('open');
 }
 
 function handleChatWallpaperImageChange(event) {
