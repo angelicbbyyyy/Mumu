@@ -537,8 +537,61 @@ function updateWallpaperPreview(value) {
 // ============================================================
 
 function updateClock() {
-  document.getElementById('statusTime').textContent =
-    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('statusTime').textContent = timeStr;
+  const homeClock = document.getElementById('homeClockTime');
+  if (homeClock) homeClock.textContent = timeStr;
+}
+
+// ============================================================
+// Lock Screen (Visual Only Effect)
+// ============================================================
+
+let currentPinInput = '';
+let isLocked = true;
+
+function initLockScreen() {
+  const lock = document.getElementById('lockScreen');
+  if (!lock) return;
+  isLocked = true;
+  currentPinInput = '';
+  updatePinUI();
+  document.getElementById('lockTitle').textContent = 'Enter Passcode';
+  lock.classList.remove('unlocked');
+}
+
+function handleKeypad(val) {
+  if (!isLocked) return;
+  
+  if (val === 'delete') {
+    currentPinInput = currentPinInput.slice(0, -1);
+  } else if (currentPinInput.length < 6) {
+    currentPinInput += val;
+  }
+  
+  updatePinUI();
+  
+  if (currentPinInput.length === 6) {
+    setTimeout(() => {
+      isLocked = false;
+      document.getElementById('lockScreen').classList.add('unlocked');
+      currentPinInput = '';
+      updatePinUI();
+    }, 250);
+  }
+}
+
+function updatePinUI() {
+  const dots = document.querySelectorAll('.pin-dot');
+  if(!dots.length) return;
+  dots.forEach((dot, idx) => {
+    if (idx < currentPinInput.length) {
+      dot.classList.add('filled');
+      dot.classList.remove('error');
+    } else {
+      dot.classList.remove('filled');
+    }
+  });
 }
 
 // ============================================================
@@ -2329,6 +2382,9 @@ function init() {
   // Clock
   updateClock();
   setInterval(updateClock, 30000);
+
+  // Lock Screen Init
+  initLockScreen();
 }
 
 document.addEventListener('DOMContentLoaded', init);
